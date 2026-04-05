@@ -1,0 +1,9 @@
+# Build outputs
+deceiverMe.app/
+dist/
+
+# macOS
+.DS_Store
+
+# Editor / local tooling
+.cursor/
