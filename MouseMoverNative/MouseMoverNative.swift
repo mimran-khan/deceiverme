@@ -10,7 +10,6 @@ import CoreGraphics
 import ApplicationServices
 import Carbon
 import UserNotifications
-import IOKit.pwr_mgt
 
 enum MovementDirection: Int {
     case right = 0
@@ -146,7 +145,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     var prefsSessionKind: PrefsSessionKind = .duration
     var sessionUntilDate: Date = Calendar.current.date(byAdding: .hour, value: 2, to: Date()) ?? Date().addingTimeInterval(7200)
     var notifyOnSessionEnd = true
-    var preventIdleSleepWhileRunning = false
+    /// When true, holds a ProcessInfo activity that disables idle display + system sleep while drifting.
+    var preventIdleSleepWhileRunning = true
 
     /// Carbon virtual key code and Carbon modifier flags (cmdKey | shiftKey | ...).
     var hotkeyKeyCode: UInt32 = UInt32(kVK_Space)
@@ -155,7 +155,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // Hotkey + power
     private var hotKeyRef: EventHotKeyRef?
     private var hotKeyHandlerRef: EventHandlerRef?
-    private var idleSleepAssertionID: IOPMAssertionID = 0
+    /// Prevents display sleep and system sleep while a live session runs (when keep-awake is enabled).
+    private var powerActivityToken: NSObjectProtocol?
     private var isRecordingHotkey = false
     private var hotkeyLocalMonitor: Any?
 
@@ -629,7 +630,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         contentView.addSubview(notifyCheckBox)
         yPosition -= 28
 
-        keepAwakeCheckBox = NSButton(checkboxWithTitle: "Keep Mac awake while drifting (no idle sleep)", target: nil, action: nil)
+        keepAwakeCheckBox = NSButton(
+            checkboxWithTitle: "Keep display & system awake while drifting (stops dimming, sleep, and most auto-lock)",
+            target: nil,
+            action: nil
+        )
         keepAwakeCheckBox.frame = NSRect(x: padding, y: yPosition, width: 360, height: 20)
         keepAwakeCheckBox.state = preventIdleSleepWhileRunning ? .on : .off
         contentView.addSubview(keepAwakeCheckBox)
@@ -835,23 +840,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
     }
 
-    // MARK: - Idle sleep assertion
+    // MARK: - Power / idle (display + system)
 
+    /// Uses `ProcessInfo` activity so both **display** and **system** idle sleep are suppressed.
+    /// Note: `kIOPMAssertionTypeNoIdleSleep` alone does **not** stop the display from sleeping; that
+    /// often triggers lock/screensaver. Synthetic mouse events also may not count as user idle reset.
     private func updateIdleSleepAssertion() {
         let want = preventIdleSleepWhileRunning && isRunning && !isPaused
         if want {
-            if idleSleepAssertionID == 0 {
-                var id: IOPMAssertionID = 0
-                let reason = "deceiverMe active session" as CFString
-                let result = IOPMAssertionCreateWithName(
-                    kIOPMAssertionTypeNoIdleSleep as CFString,
-                    IOPMAssertionLevel(kIOPMAssertionLevelOn),
-                    reason,
-                    &id
+            if powerActivityToken == nil {
+                powerActivityToken = ProcessInfo.processInfo.beginActivity(
+                    options: [.idleDisplaySleepDisabled, .idleSystemSleepDisabled],
+                    reason: "deceiverMe active drift session"
                 )
-                if result == kIOReturnSuccess {
-                    idleSleepAssertionID = id
-                }
             }
         } else {
             releaseIdleSleepAssertion()
@@ -859,9 +860,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     private func releaseIdleSleepAssertion() {
-        if idleSleepAssertionID != 0 {
-            IOPMAssertionRelease(idleSleepAssertionID)
-            idleSleepAssertionID = 0
+        if let token = powerActivityToken {
+            ProcessInfo.processInfo.endActivity(token)
+            powerActivityToken = nil
         }
     }
 
@@ -1293,7 +1294,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             sessionUntilDate = Date(timeIntervalSince1970: d.double(forKey: "sessionUntilEpoch"))
         }
         notifyOnSessionEnd = d.object(forKey: "notifyOnSessionEnd") == nil ? true : d.bool(forKey: "notifyOnSessionEnd")
-        preventIdleSleepWhileRunning = d.bool(forKey: "preventIdleSleepWhileRunning")
+        // Default on: display-only IOPM assertions were insufficient; users expect drift to avoid lock.
+        if d.object(forKey: "preventIdleSleepWhileRunning") != nil {
+            preventIdleSleepWhileRunning = d.bool(forKey: "preventIdleSleepWhileRunning")
+        } else {
+            preventIdleSleepWhileRunning = true
+        }
         if d.object(forKey: "hotkeyKeyCode") != nil {
             hotkeyKeyCode = UInt32(d.integer(forKey: "hotkeyKeyCode"))
         }

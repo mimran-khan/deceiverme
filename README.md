@@ -6,7 +6,7 @@
 [![macOS](https://img.shields.io/badge/macOS-11%2B-000000?logo=apple&logoColor=white)](https://developer.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5.x-F05138?logo=swift&logoColor=white)](https://swift.org)
 
-**Native macOS menu bar app — timed cursor drift, sessions, and optional idle-sleep prevention.**
+**Native macOS menu bar app — timed cursor drift, sessions, and optional display + system idle prevention.**
 
 [Overview](#overview) · [Features](#features) · [User guide](#user-guide) · [Build](#build) · [Reference](#reference) · [Troubleshooting](#troubleshooting)
 
@@ -16,7 +16,7 @@
 
 ## Overview
 
-deceiverMe nudges the cursor on a schedule (pixels, direction, interval). Use it for **demos**, **long sessions**, or **keeping the Mac from idling to sleep** when you enable the power option — only on **machines you own or are allowed to control**.
+deceiverMe nudges the cursor on a schedule (pixels, direction, interval). Use it for **demos**, **long sessions**, or **keeping the display and system from idling** (power option; on by default) — only on **machines you own or are allowed to control**.
 
 | | |
 | :--- | :--- |
@@ -83,7 +83,7 @@ Title: **Studio — deceiverMe**. Main areas:
 | Arc length (hours) | For timed arc |
 | Land at | Date-time picker |
 | Ping when this drift lands | End notification |
-| Keep Mac awake while drifting | IOPM **NoIdleSleep** while running and not paused |
+| Keep display & system awake while drifting | `ProcessInfo.beginActivity` with **idle display + system sleep disabled** while running and not paused |
 | Global shortcut | Display + **Record shortcut…** |
 | Save recipe / Close | Persist or dismiss |
 
@@ -198,7 +198,7 @@ SKIP_ZIP=1 ./build.sh
 | `prefsSessionKind` | `0` open / `1` timed / `2` until |
 | `sessionUntilEpoch` | Deadline (`timeIntervalSince1970`) |
 | `notifyOnSessionEnd` | Bool (default true if missing) |
-| `preventIdleSleepWhileRunning` | Bool |
+| `preventIdleSleepWhileRunning` | Bool (default **true** if key missing) |
 | `hotkeyKeyCode` | Carbon virtual key |
 | `hotkeyCarbonModifiers` | Carbon modifiers bitmask |
 
@@ -240,6 +240,7 @@ Restart the app after changes.
 | Cursor never moves | Accessibility off → add app and restart |
 | Hotkey dead | Pick another combo in **Record shortcut…** |
 | Can’t save preferences | Stop the session first |
+| Screen still locks | Leave **Keep display & system awake** on in **Tune drift**; confirm a **live** session (not Hold). **MDM** or **Lock Screen after …** policies can still force lock. Synthetic mouse moves alone do not always reset idle timers. |
 
 ---
 
