@@ -5,6 +5,13 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![macOS](https://img.shields.io/badge/macOS-11%2B-000000?logo=apple&logoColor=white)](https://developer.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5.x-F05138?logo=swift&logoColor=white)](https://swift.org)
+[![GitHub release](https://img.shields.io/github/v/release/mimran-khan/deceiverme?include_prereleases&logo=github)](https://github.com/mimran-khan/deceiverme/releases/latest)
+[![GitHub stars](https://img.shields.io/github/stars/mimran-khan/deceiverme?style=social)](https://github.com/mimran-khan/deceiverme/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/mimran-khan/deceiverme?style=social)](https://github.com/mimran-khan/deceiverme/network/members)
+[![GitHub watchers](https://img.shields.io/github/watchers/mimran-khan/deceiverme?style=social)](https://github.com/mimran-khan/deceiverme/watchers)
+[![GitHub issues](https://img.shields.io/github/issues/mimran-khan/deceiverme)](https://github.com/mimran-khan/deceiverme/issues)
+[![GitHub downloads](https://img.shields.io/github/downloads/mimran-khan/deceiverme/total?logo=github)](https://github.com/mimran-khan/deceiverme/releases)
+[![Profile views](https://komarev.com/ghpvc/?username=mimran-khan&label=repo%20views&color=0e75b6&style=flat)](https://github.com/mimran-khan/deceiverme)
 
 **Native macOS menu bar app — timed cursor movement, sessions, system monitoring, and idle prevention.**
 
