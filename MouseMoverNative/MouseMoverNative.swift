@@ -176,13 +176,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     var lastNetDown: String = "—"
     var lastNetUp: String = "—"
 
-    static let appVersion = "1.1.0"
+    static let appVersion = "1.2.0"
 
     // Update banner
     var updateBannerView: NSView?
     var updateBannerLabel: NSTextField?
     var latestRemoteVersion: String?
     var latestDownloadURL: String?
+    var latestAssetURL: String?
 
     // Configuration window
     var configWindow: NSWindow!
@@ -630,35 +631,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         badgeLabel.drawsBackground = false
         cv.addSubview(badgeLabel)
 
-        // ── Update banner (hidden by default) ──
-        y -= 6
-        let bannerH: CGFloat = 36
-        let banner = NSView(frame: NSRect(x: pad, y: y - bannerH, width: contentW, height: bannerH))
-        banner.wantsLayer = true
-        banner.layer?.cornerRadius = 8
-        banner.layer?.backgroundColor = NSColor(red: 0.15, green: 0.55, blue: 1.0, alpha: 0.15).cgColor
-        banner.layer?.borderColor = NSColor(red: 0.3, green: 0.6, blue: 1.0, alpha: 0.4).cgColor
-        banner.layer?.borderWidth = 1
-
-        let bannerLbl = NSTextField(labelWithString: "")
-        bannerLbl.font = NSFont.systemFont(ofSize: 11, weight: .medium)
-        bannerLbl.textColor = NSColor(red: 0.4, green: 0.7, blue: 1.0, alpha: 1.0)
-        bannerLbl.frame = NSRect(x: 10, y: 0, width: contentW - 90, height: bannerH)
-        banner.addSubview(bannerLbl)
-
-        let updateBtn = NSButton(title: "Update", target: self, action: #selector(openReleasePage))
-        updateBtn.bezelStyle = .inline
-        updateBtn.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
-        updateBtn.frame = NSRect(x: contentW - 74, y: 6, width: 64, height: 24)
-        banner.addSubview(updateBtn)
-
-        banner.isHidden = true
-        cv.addSubview(banner)
-        updateBannerView = banner
-        updateBannerLabel = bannerLbl
-
         // ── Hero Time ──
-        y -= 40
+        y -= 46
         heroTimeLabel = NSTextField(labelWithString: "00 : 00 : 00")
         if #available(macOS 10.15, *) {
             heroTimeLabel.font = NSFont.monospacedSystemFont(ofSize: 44, weight: .thin)
@@ -799,6 +773,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         preferencesButton = createModernButton(title: "Settings", action: #selector(showPreferences), frame: NSRect(x: cv.bounds.width - pad - btnW, y: y - btnH, width: btnW, height: btnH))
         cv.addSubview(preferencesButton)
+
+        // ── Update banner (hidden by default, above footer) ──
+        let bannerH: CGFloat = 36
+        let banner = NSView(frame: NSRect(x: pad, y: 46, width: contentW, height: bannerH))
+        banner.wantsLayer = true
+        banner.layer?.cornerRadius = 8
+        banner.layer?.backgroundColor = NSColor(red: 0.15, green: 0.55, blue: 1.0, alpha: 0.15).cgColor
+        banner.layer?.borderColor = NSColor(red: 0.3, green: 0.6, blue: 1.0, alpha: 0.4).cgColor
+        banner.layer?.borderWidth = 1
+
+        let bannerLbl = NSTextField(labelWithString: "")
+        bannerLbl.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        bannerLbl.textColor = NSColor(red: 0.4, green: 0.7, blue: 1.0, alpha: 1.0)
+        bannerLbl.frame = NSRect(x: 10, y: 9, width: contentW - 90, height: 18)
+        banner.addSubview(bannerLbl)
+
+        let updateBtn = NSButton(title: "Update", target: self, action: #selector(performAutoUpdate))
+        updateBtn.bezelStyle = .inline
+        updateBtn.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        updateBtn.frame = NSRect(x: contentW - 74, y: 6, width: 64, height: 24)
+        banner.addSubview(updateBtn)
+
+        banner.isHidden = true
+        cv.addSubview(banner)
+        updateBannerView = banner
+        updateBannerLabel = bannerLbl
 
         // ── Footer (centered, two lines) ──
         let footerW = cv.bounds.width
@@ -1143,9 +1143,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
             if self.isNewerVersion(remote: remoteVersion, local: AppDelegate.appVersion) {
                 let htmlUrl = json["html_url"] as? String ?? "https://github.com/mimran-khan/deceiverme/releases"
+                var zipURL: String?
+                if let assets = json["assets"] as? [[String: Any]] {
+                    for asset in assets {
+                        if let name = asset["name"] as? String, name.hasSuffix(".zip"),
+                           let dl = asset["browser_download_url"] as? String {
+                            zipURL = dl
+                            break
+                        }
+                    }
+                }
                 DispatchQueue.main.async {
                     self.latestRemoteVersion = remoteVersion
                     self.latestDownloadURL = htmlUrl
+                    self.latestAssetURL = zipURL
                     self.showUpdateBanner(version: remoteVersion)
                 }
             } else {
@@ -1175,11 +1186,81 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         updateBannerView?.isHidden = true
     }
 
-    @objc func openReleasePage() {
-        let urlString = latestDownloadURL ?? "https://github.com/mimran-khan/deceiverme/releases"
-        if let url = URL(string: urlString) {
-            NSWorkspace.shared.open(url)
+    @objc func performAutoUpdate() {
+        guard let assetURLString = latestAssetURL,
+              let assetURL = URL(string: assetURLString) else {
+            let urlString = latestDownloadURL ?? "https://github.com/mimran-khan/deceiverme/releases"
+            if let url = URL(string: urlString) { NSWorkspace.shared.open(url) }
+            return
         }
+
+        updateBannerLabel?.stringValue = "  Downloading update…"
+
+        URLSession.shared.downloadTask(with: assetURL) { [weak self] tempURL, _, error in
+            guard let self = self else { return }
+            guard let tempURL = tempURL, error == nil else {
+                DispatchQueue.main.async { self.updateBannerLabel?.stringValue = "  Download failed — try manually" }
+                return
+            }
+
+            let currentAppPath = Bundle.main.bundlePath
+            let parentDir = (currentAppPath as NSString).deletingLastPathComponent
+            let appName = (currentAppPath as NSString).lastPathComponent
+            let tempDir = NSTemporaryDirectory() + "deceiverMe-update-\(UUID().uuidString)"
+
+            do {
+                try FileManager.default.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
+                let zipPath = tempDir + "/update.zip"
+                try FileManager.default.moveItem(atPath: tempURL.path, toPath: zipPath)
+
+                let unzip = Process()
+                unzip.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+                unzip.arguments = ["-o", zipPath, "-d", tempDir]
+                unzip.standardOutput = FileHandle.nullDevice
+                unzip.standardError = FileHandle.nullDevice
+                try unzip.run()
+                unzip.waitUntilExit()
+
+                let contents = try FileManager.default.contentsOfDirectory(atPath: tempDir)
+                guard let newApp = contents.first(where: { $0.hasSuffix(".app") }) else {
+                    throw NSError(domain: "Update", code: 1, userInfo: nil)
+                }
+                let newAppPath = tempDir + "/" + newApp
+                let targetPath = parentDir + "/" + appName
+
+                let script = """
+                #!/bin/bash
+                sleep 1
+                rm -rf "\(targetPath)"
+                cp -R "\(newAppPath)" "\(parentDir)/"
+                open "\(targetPath)"
+                rm -rf "\(tempDir)"
+                """
+                let scriptPath = tempDir + "/update.sh"
+                try script.write(toFile: scriptPath, atomically: true, encoding: .utf8)
+
+                let chmod = Process()
+                chmod.executableURL = URL(fileURLWithPath: "/bin/chmod")
+                chmod.arguments = ["+x", scriptPath]
+                try chmod.run()
+                chmod.waitUntilExit()
+
+                DispatchQueue.main.async {
+                    self.updateBannerLabel?.stringValue = "  Installing update…"
+                    let runner = Process()
+                    runner.executableURL = URL(fileURLWithPath: "/bin/bash")
+                    runner.arguments = [scriptPath]
+                    try? runner.run()
+
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        NSApplication.shared.terminate(nil)
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async { self.updateBannerLabel?.stringValue = "  Update failed — try manually" }
+                try? FileManager.default.removeItem(atPath: tempDir)
+            }
+        }.resume()
     }
 
     func createStatBox(title: String, value: String, frame: NSRect) -> NSView {

@@ -66,8 +66,8 @@ Title: **deceiverMe**. Main areas:
 | Element | Description |
 | :--- | :--- |
 | Status badge | `Idle` / `Running` / `Paused` |
-| Version tag | Current version (e.g. `v1.1.0`) |
-| Update banner | Appears when a newer release exists on GitHub — click **Update** to open the release page |
+| Version tag | Current version (e.g. `v1.2.0`) |
+| Update banner | Appears when a newer release exists on GitHub — click **Update** to auto-download, install, and relaunch |
 | Clock | Session elapsed `HH:MM:SS` |
 | Time left | Remaining time, `∞` if open-ended |
 | Moves | Move count |
@@ -77,12 +77,14 @@ Title: **deceiverMe**. Main areas:
 
 **Start** is only enabled when fully idle.
 
-### Auto-update check
+### Auto-update
 
 Every time you open the Dashboard, deceiverMe queries the [GitHub Releases API](https://api.github.com/repos/mimran-khan/deceiverme/releases/latest) to check for a newer version.
 
-- **New release available** — a blue notification banner appears in the Dashboard with the new version number and an **Update** button that opens the release page in your browser.
+- **New release available** — a blue notification banner appears at the bottom of the Dashboard with the new version number and an **Update** button.
+- **One-click update** — clicking **Update** automatically downloads the latest `.zip` asset from GitHub, extracts the new `.app`, replaces the current installation, and relaunches — no manual download or drag-and-drop needed.
 - **Up to date** — the banner stays hidden; no interruption.
+- **Fallback** — if the zip asset is unavailable, the button opens the release page in your browser instead.
 
 The check is lightweight (single HTTPS GET), runs in the background, and never blocks the UI. No data beyond the version check leaves your machine.
 
