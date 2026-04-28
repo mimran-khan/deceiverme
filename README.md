@@ -66,6 +66,8 @@ Title: **deceiverMe**. Main areas:
 | Element | Description |
 | :--- | :--- |
 | Status badge | `Idle` / `Running` / `Paused` |
+| Version tag | Current version (e.g. `v1.1.0`) |
+| Update banner | Appears when a newer release exists on GitHub — click **Update** to open the release page |
 | Clock | Session elapsed `HH:MM:SS` |
 | Time left | Remaining time, `∞` if open-ended |
 | Moves | Move count |
@@ -74,6 +76,15 @@ Title: **deceiverMe**. Main areas:
 | Buttons | **Start**, **Pause** / **Resume**, **Stop**, **Settings** |
 
 **Start** is only enabled when fully idle.
+
+### Auto-update check
+
+Every time you open the Dashboard, deceiverMe queries the [GitHub Releases API](https://api.github.com/repos/mimran-khan/deceiverme/releases/latest) to check for a newer version.
+
+- **New release available** — a blue notification banner appears in the Dashboard with the new version number and an **Update** button that opens the release page in your browser.
+- **Up to date** — the banner stays hidden; no interruption.
+
+The check is lightweight (single HTTPS GET), runs in the background, and never blocks the UI. No data beyond the version check leaves your machine.
 
 ### System monitor
 
@@ -279,7 +290,7 @@ Restart the app after changes.
 
 ## Security and ethics
 
-- No bundled **network** or telemetry — no data leaves your machine.
+- The only outbound request is an **update check** against the GitHub Releases API — no telemetry or analytics.
 - Cursor control and idle-sleep assertions are **sensitive** in managed environments — follow **policy**.
 - **Ad-hoc** sign is fine for personal builds; wide distribution usually needs **Developer ID** + **notarization**.
 

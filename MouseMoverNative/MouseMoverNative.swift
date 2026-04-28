@@ -176,7 +176,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     var lastNetDown: String = "—"
     var lastNetUp: String = "—"
 
-    static let appVersion = "1.0.0"
+    static let appVersion = "1.1.0"
+
+    // Update banner
+    var updateBannerView: NSView?
+    var updateBannerLabel: NSTextField?
+    var latestRemoteVersion: String?
+    var latestDownloadURL: String?
 
     // Configuration window
     var configWindow: NSWindow!
@@ -607,6 +613,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         wordmark.frame = NSRect(x: pad + logoSize + 8, y: y - 24, width: 160, height: 24)
         cv.addSubview(wordmark)
 
+        let versionTag = NSTextField(labelWithString: "v\(AppDelegate.appVersion)")
+        versionTag.font = NSFont.systemFont(ofSize: 10, weight: .medium)
+        versionTag.textColor = DMTheme.textTertiary
+        versionTag.alignment = .left
+        versionTag.frame = NSRect(x: pad + logoSize + 8, y: y - 38, width: 60, height: 14)
+        cv.addSubview(versionTag)
+
         // Small status dot instead of the IDLE badge
         badgeLabel = NSTextField(labelWithString: "")
         badgeLabel.frame = NSRect(x: pad + logoSize + 170, y: y - 17, width: 8, height: 8)
@@ -617,8 +630,35 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         badgeLabel.drawsBackground = false
         cv.addSubview(badgeLabel)
 
+        // ── Update banner (hidden by default) ──
+        y -= 6
+        let bannerH: CGFloat = 36
+        let banner = NSView(frame: NSRect(x: pad, y: y - bannerH, width: contentW, height: bannerH))
+        banner.wantsLayer = true
+        banner.layer?.cornerRadius = 8
+        banner.layer?.backgroundColor = NSColor(red: 0.15, green: 0.55, blue: 1.0, alpha: 0.15).cgColor
+        banner.layer?.borderColor = NSColor(red: 0.3, green: 0.6, blue: 1.0, alpha: 0.4).cgColor
+        banner.layer?.borderWidth = 1
+
+        let bannerLbl = NSTextField(labelWithString: "")
+        bannerLbl.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        bannerLbl.textColor = NSColor(red: 0.4, green: 0.7, blue: 1.0, alpha: 1.0)
+        bannerLbl.frame = NSRect(x: 10, y: 0, width: contentW - 90, height: bannerH)
+        banner.addSubview(bannerLbl)
+
+        let updateBtn = NSButton(title: "Update", target: self, action: #selector(openReleasePage))
+        updateBtn.bezelStyle = .inline
+        updateBtn.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        updateBtn.frame = NSRect(x: contentW - 74, y: 6, width: 64, height: 24)
+        banner.addSubview(updateBtn)
+
+        banner.isHidden = true
+        cv.addSubview(banner)
+        updateBannerView = banner
+        updateBannerLabel = bannerLbl
+
         // ── Hero Time ──
-        y -= 46
+        y -= 40
         heroTimeLabel = NSTextField(labelWithString: "00 : 00 : 00")
         if #available(macOS 10.15, *) {
             heroTimeLabel.font = NSFont.monospacedSystemFont(ofSize: 44, weight: .thin)
@@ -1089,21 +1129,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         request.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
         request.setValue("deceiverMe/\(AppDelegate.appVersion)", forHTTPHeaderField: "User-Agent")
 
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+        URLSession.shared.dataTask(with: request) { [weak self] data, _, error in
             guard let self = self,
                   error == nil,
                   let data = data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let tagName = json["tag_name"] as? String else { return }
+                  let tagName = json["tag_name"] as? String else {
+                DispatchQueue.main.async { self?.hideUpdateBanner() }
+                return
+            }
 
             let remoteVersion = tagName.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
-            let localVersion = AppDelegate.appVersion
 
-            if self.isNewerVersion(remote: remoteVersion, local: localVersion) {
+            if self.isNewerVersion(remote: remoteVersion, local: AppDelegate.appVersion) {
                 let htmlUrl = json["html_url"] as? String ?? "https://github.com/mimran-khan/deceiverme/releases"
                 DispatchQueue.main.async {
-                    self.showUpdateAlert(remoteVersion: remoteVersion, downloadURL: htmlUrl)
+                    self.latestRemoteVersion = remoteVersion
+                    self.latestDownloadURL = htmlUrl
+                    self.showUpdateBanner(version: remoteVersion)
                 }
+            } else {
+                DispatchQueue.main.async { self.hideUpdateBanner() }
             }
         }.resume()
     }
@@ -1120,18 +1166,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         return false
     }
 
-    private func showUpdateAlert(remoteVersion: String, downloadURL: String) {
-        let alert = NSAlert()
-        alert.messageText = "Update Available"
-        alert.informativeText = "deceiverMe v\(remoteVersion) is available. You are running v\(AppDelegate.appVersion)."
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Download")
-        alert.addButton(withTitle: "Later")
+    private func showUpdateBanner(version: String) {
+        updateBannerLabel?.stringValue = "  v\(version) available — update now"
+        updateBannerView?.isHidden = false
+    }
 
-        if alert.runModal() == .alertFirstButtonReturn {
-            if let url = URL(string: downloadURL) {
-                NSWorkspace.shared.open(url)
-            }
+    private func hideUpdateBanner() {
+        updateBannerView?.isHidden = true
+    }
+
+    @objc func openReleasePage() {
+        let urlString = latestDownloadURL ?? "https://github.com/mimran-khan/deceiverme/releases"
+        if let url = URL(string: urlString) {
+            NSWorkspace.shared.open(url)
         }
     }
 
@@ -1526,6 +1573,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     @objc func showWindow() {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        checkForGitHubUpdate()
     }
 
     @objc func showPreferences() {
