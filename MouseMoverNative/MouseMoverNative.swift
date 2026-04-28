@@ -10,6 +10,46 @@ import CoreGraphics
 import ApplicationServices
 import Carbon
 import UserNotifications
+import Darwin
+import IOKit
+
+struct SMCKeyData_t {
+    struct KeyInfo {
+        var dataSize: UInt32 = 0
+        var dataType: UInt32 = 0
+        var dataAttributes: UInt8 = 0
+    }
+
+    static let kSMCHandleYPCEvent: UInt8 = 2
+    static let kSMCGetKeyInfo: UInt8 = 9
+    static let kSMCReadKey: UInt8 = 5
+
+    static let dataType_flt: UInt32 = fourCC("flt ")
+    static let dataType_sp78: UInt32 = fourCC("sp78")
+    static let dataType_ui8: UInt32 = fourCC("ui8 ")
+    static let dataType_ui16: UInt32 = fourCC("ui16")
+
+    var key: UInt32 = 0
+    var vers = (UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0))
+    var pLimitData = (UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
+                      UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0))
+    var keyInfo = KeyInfo()
+    var padding: UInt16 = 0
+    var result: UInt8 = 0
+    var status: UInt8 = 0
+    var data8: UInt8 = 0
+    var data32: UInt32 = 0
+    var bytes: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) =
+        (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+
+    static func fourCC(_ s: String) -> UInt32 {
+        let c = Array(s.utf8)
+        return UInt32(c[0]) << 24 | UInt32(c[1]) << 16 | UInt32(c[2]) << 8 | UInt32(c[3])
+    }
+}
 
 enum MovementDirection: Int {
     case right = 0
@@ -37,16 +77,16 @@ enum PrefsSessionKind: Int {
 // MARK: - Visual language (distinct from stock “utility panel” apps)
 
 private enum DMTheme {
-    /// Left rail + accents — deep blue-violet (not system gray cards).
-    static let rail = NSColor(calibratedHue: 0.62, saturation: 0.22, brightness: 0.20, alpha: 1)
-    static let accent = NSColor(calibratedHue: 0.08, saturation: 0.55, brightness: 0.92, alpha: 1)
-    static let accentMuted = NSColor(calibratedHue: 0.08, saturation: 0.35, brightness: 0.55, alpha: 1)
-    static let ink = NSColor.labelColor
-    static let whisper = NSColor.secondaryLabelColor
-
-    static func badgeIdle() -> NSColor { NSColor(calibratedWhite: 0.45, alpha: 0.18) }
-    static func badgeLive() -> NSColor { NSColor(calibratedHue: 0.38, saturation: 0.45, brightness: 0.42, alpha: 0.25) }
-    static func badgeHold() -> NSColor { NSColor(calibratedHue: 0.12, saturation: 0.40, brightness: 0.85, alpha: 0.22) }
+    static let bg = NSColor(calibratedRed: 0.07, green: 0.07, blue: 0.10, alpha: 1)
+    static let surface = NSColor(calibratedRed: 0.11, green: 0.11, blue: 0.16, alpha: 1)
+    static let accent = NSColor(calibratedRed: 0.15, green: 0.82, blue: 0.75, alpha: 1)
+    static let accentDim = NSColor(calibratedRed: 0.12, green: 0.50, blue: 0.46, alpha: 1)
+    static let textPrimary = NSColor(calibratedWhite: 0.95, alpha: 1)
+    static let textSecondary = NSColor(calibratedWhite: 0.50, alpha: 1)
+    static let textTertiary = NSColor(calibratedWhite: 0.30, alpha: 1)
+    static let danger = NSColor(calibratedRed: 0.95, green: 0.35, blue: 0.40, alpha: 1)
+    static let success = NSColor(calibratedRed: 0.30, green: 0.80, blue: 0.55, alpha: 1)
+    static let warning = NSColor(calibratedRed: 0.95, green: 0.70, blue: 0.25, alpha: 1)
 }
 
 // MARK: - Carbon hotkey callback (C ABI)
@@ -91,6 +131,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     var showWindowMenuItem: NSMenuItem!
     var preferencesMenuItem: NSMenuItem!
     var quitMenuItem: NSMenuItem!
+    var menuCpuUsageItem: NSMenuItem!
+    var menuRamItem: NSMenuItem!
+    var menuNetItem: NSMenuItem!
+    var menuCpuTempItem: NSMenuItem!
+    var menuGpuTempItem: NSMenuItem!
 
     // Desktop window
     var window: NSWindow!
@@ -104,8 +149,34 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     var preferencesButton: NSButton!
     var statusDot: NSView!
     var heroTimeLabel: NSTextField!
-    var railView: NSView!
+    
     var badgeLabel: NSTextField!
+    var progressTrack: NSView?
+    var progressFill: NSView?
+
+    // System monitoring
+    var cpuTempLabel: NSTextField!
+    var gpuTempLabel: NSTextField!
+    var cpuUsageLabel: NSTextField!
+    var ramLabel: NSTextField!
+    var netDownLabel: NSTextField!
+    var netUpLabel: NSTextField!
+    var sysMonTimer: Timer?
+    var prevBytesIn: UInt64 = 0
+    var prevBytesOut: UInt64 = 0
+    var smcConnection: io_connect_t = 0
+    
+
+    var bannerCycleTimer: Timer?
+    var bannerCycleIndex: Int = 0
+    var lastCpuTemp: String = "—"
+    var lastGpuTemp: String = "—"
+    var lastCpuUsage: String = "—"
+    var lastRam: String = "—"
+    var lastNetDown: String = "—"
+    var lastNetUp: String = "—"
+
+    static let appVersion = "1.0.0"
 
     // Configuration window
     var configWindow: NSWindow!
@@ -160,8 +231,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var isRecordingHotkey = false
     private var hotkeyLocalMonitor: Any?
 
+    func openSMCConnection() {
+        let mainPort: mach_port_t = 0
+        let service = IOServiceGetMatchingService(mainPort, IOServiceMatching("AppleSMC"))
+        guard service != 0 else { return }
+        let result = IOServiceOpen(service, mach_task_self_, 0, &smcConnection)
+        IOObjectRelease(service)
+        if result != kIOReturnSuccess { smcConnection = 0 }
+    }
+
+    func closeSMCConnection() {
+        if smcConnection != 0 {
+            IOServiceClose(smcConnection)
+            smcConnection = 0
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         loadPreferences()
+        openSMCConnection()
         if #available(macOS 10.14, *) {
             UNUserNotificationCenter.current().delegate = self
             requestNotificationPermissionIfNeeded()
@@ -174,18 +262,99 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         updateMenu()
         updateDesktopWindow()
 
-        updateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.updateMenu()
             self?.updateDesktopWindow()
+            self?.updateBannerTimer()
         }
+        RunLoop.main.add(timer, forMode: .common)
+        updateTimer = timer
 
         window.makeKeyAndOrderFront(nil)
         NSApp.setActivationPolicy(.regular)
+
+        startBannerCycleTimer()
+        checkForGitHubUpdate()
+
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(captureWindowSnapshots(_:)),
+            name: NSNotification.Name("com.deceiverme.captureScreenshots"),
+            object: nil
+        )
+    }
+
+    @objc func captureWindowSnapshots(_ note: Notification) {
+        let home = NSHomeDirectory()
+        let projectDir = "\(home)/Documents/PersonalProject/simm/screenshots"
+        let dir = (note.userInfo?["dir"] as? String) ?? projectDir
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+
+        NSLog("captureWindowSnapshots triggered — saving to \(dir)")
+
+        func save(_ win: NSWindow, name: String) {
+            guard let view = win.contentView else {
+                NSLog("  No contentView for \(name)")
+                return
+            }
+            let bounds = view.bounds
+            let pdfData = view.dataWithPDF(inside: bounds)
+            guard let pdfImage = NSImage(data: pdfData) else {
+                NSLog("  Could not create image from PDF for \(name)")
+                return
+            }
+            let scale = win.backingScaleFactor
+            let w = Int(bounds.width * scale)
+            let h = Int(bounds.height * scale)
+
+            let bitmapRep = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: w, pixelsHigh: h,
+                bitsPerSample: 8, samplesPerPixel: 4,
+                hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bytesPerRow: 0, bitsPerPixel: 0
+            )!
+            bitmapRep.size = bounds.size
+
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmapRep)
+            pdfImage.draw(in: bounds)
+            NSGraphicsContext.restoreGraphicsState()
+
+            guard let data = bitmapRep.representation(using: .png, properties: [:]) else {
+                NSLog("  No PNG data for \(name)")
+                return
+            }
+            let path = "\(dir)/\(name).png"
+            do {
+                try data.write(to: URL(fileURLWithPath: path))
+                NSLog("  Screenshot saved: \(path) (\(data.count) bytes)")
+            } catch {
+                NSLog("  Write failed: \(error)")
+            }
+        }
+
+        window.makeKeyAndOrderFront(nil)
+        configWindow.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in
+            save(window, name: "dashboard")
+            save(configWindow, name: "settings")
+            NSLog("All screenshots done")
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        updateTimer?.invalidate()
+        sysMonTimer?.invalidate()
+        bannerCycleTimer?.invalidate()
+        mouseMoveTimer?.invalidate()
         releaseIdleSleepAssertion()
         unregisterCarbonHotKey()
+        closeSMCConnection()
+        DistributedNotificationCenter.default().removeObserver(self)
         stopMovement(notify: false, reason: nil)
     }
 
@@ -286,56 +455,78 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     func setupMenu() {
         menu = NSMenu()
 
-        statusMenuItem = NSMenuItem(title: "State — Idle", action: nil, keyEquivalent: "")
+        statusMenuItem = NSMenuItem(title: "Status — Idle", action: nil, keyEquivalent: "")
         statusMenuItem.isEnabled = false
         menu.addItem(statusMenuItem)
 
-        elapsedTimeMenuItem = NSMenuItem(title: "Clock: 00:00:00", action: nil, keyEquivalent: "")
+        elapsedTimeMenuItem = NSMenuItem(title: "Elapsed: 00:00:00", action: nil, keyEquivalent: "")
         elapsedTimeMenuItem.isEnabled = false
         menu.addItem(elapsedTimeMenuItem)
 
-        remainingTimeMenuItem = NSMenuItem(title: "Horizon: —", action: nil, keyEquivalent: "")
+        remainingTimeMenuItem = NSMenuItem(title: "Time left: —", action: nil, keyEquivalent: "")
         remainingTimeMenuItem.isEnabled = false
         menu.addItem(remainingTimeMenuItem)
 
-        iterationMenuItem = NSMenuItem(title: "Ticks: 0", action: nil, keyEquivalent: "")
+        iterationMenuItem = NSMenuItem(title: "Moves: 0", action: nil, keyEquivalent: "")
         iterationMenuItem.isEnabled = false
         menu.addItem(iterationMenuItem)
 
-        progressMenuItem = NSMenuItem(title: "Carry: 0%", action: nil, keyEquivalent: "")
+        progressMenuItem = NSMenuItem(title: "Progress: 0%", action: nil, keyEquivalent: "")
         progressMenuItem.isEnabled = false
         menu.addItem(progressMenuItem)
 
         menu.addItem(NSMenuItem.separator())
 
-        let beginMenu = NSMenu(title: "Begin drift")
-        beginMenu.addItem(menuItem(title: "From saved recipe", action: #selector(startWithPreferences), tag: 0))
+        let beginMenu = NSMenu(title: "Start")
+        beginMenu.addItem(menuItem(title: "Use saved settings", action: #selector(startWithPreferences), tag: 0))
         beginMenu.addItem(NSMenuItem.separator())
-        beginMenu.addItem(menuItem(title: "Open horizon (no end)", action: #selector(startIndefinite), tag: 0))
-        beginMenu.addItem(menuItem(title: "One hour arc", action: #selector(startOneHour), tag: 0))
-        beginMenu.addItem(menuItem(title: "Quarter-day arc", action: #selector(startFourHours), tag: 0))
-        beginMenu.addItem(menuItem(title: "Full-day arc", action: #selector(startEightHours), tag: 0))
-        let beginItem = NSMenuItem(title: "Begin drift", action: nil, keyEquivalent: "")
+        beginMenu.addItem(menuItem(title: "Run forever", action: #selector(startIndefinite), tag: 0))
+        beginMenu.addItem(menuItem(title: "1 hour", action: #selector(startOneHour), tag: 0))
+        beginMenu.addItem(menuItem(title: "4 hours", action: #selector(startFourHours), tag: 0))
+        beginMenu.addItem(menuItem(title: "8 hours", action: #selector(startEightHours), tag: 0))
+        let beginItem = NSMenuItem(title: "Start", action: nil, keyEquivalent: "")
         beginItem.submenu = beginMenu
         menu.addItem(beginItem)
 
-        pauseMenuItem = NSMenuItem(title: "Hold", action: #selector(pauseMovement), keyEquivalent: "")
+        pauseMenuItem = NSMenuItem(title: "Pause", action: #selector(pauseMovement), keyEquivalent: "")
         pauseMenuItem.target = self
         pauseMenuItem.isEnabled = false
         menu.addItem(pauseMenuItem)
 
-        stopMenuItem = NSMenuItem(title: "Finish drift", action: #selector(stopMovementFromMenu), keyEquivalent: "")
+        stopMenuItem = NSMenuItem(title: "Stop", action: #selector(stopMovementFromMenu), keyEquivalent: "")
         stopMenuItem.target = self
         stopMenuItem.isEnabled = false
         menu.addItem(stopMenuItem)
 
         menu.addItem(NSMenuItem.separator())
 
-        showWindowMenuItem = NSMenuItem(title: "Open studio", action: #selector(showWindow), keyEquivalent: "w")
+        menuCpuUsageItem = NSMenuItem(title: "CPU: —", action: nil, keyEquivalent: "")
+        menuCpuUsageItem.isEnabled = false
+        menu.addItem(menuCpuUsageItem)
+
+        menuRamItem = NSMenuItem(title: "RAM: —", action: nil, keyEquivalent: "")
+        menuRamItem.isEnabled = false
+        menu.addItem(menuRamItem)
+
+        menuNetItem = NSMenuItem(title: "Net: — down / — up", action: nil, keyEquivalent: "")
+        menuNetItem.isEnabled = false
+        menu.addItem(menuNetItem)
+
+        menuCpuTempItem = NSMenuItem(title: "CPU Temp: —", action: nil, keyEquivalent: "")
+        menuCpuTempItem.isEnabled = false
+        menu.addItem(menuCpuTempItem)
+
+        menuGpuTempItem = NSMenuItem(title: "GPU Temp: —", action: nil, keyEquivalent: "")
+        menuGpuTempItem.isEnabled = false
+        menu.addItem(menuGpuTempItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        showWindowMenuItem = NSMenuItem(title: "Dashboard", action: #selector(showWindow), keyEquivalent: "w")
         showWindowMenuItem.target = self
         menu.addItem(showWindowMenuItem)
 
-        preferencesMenuItem = NSMenuItem(title: "Tune drift…", action: #selector(showPreferences), keyEquivalent: ",")
+        preferencesMenuItem = NSMenuItem(title: "Settings…", action: #selector(showPreferences), keyEquivalent: ",")
         preferencesMenuItem.target = self
         menu.addItem(preferencesMenuItem)
 
@@ -382,189 +573,609 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // MARK: - Desktop + preferences UI
 
     func setupDesktopWindow() {
-        let windowRect = NSRect(x: 0, y: 0, width: 560, height: 456)
+        let windowRect = NSRect(x: 0, y: 0, width: 460, height: 540)
         window = NSWindow(
             contentRect: windowRect,
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
-        window.title = "Studio — deceiverMe"
+        window.title = "deceiverMe"
         window.center()
         window.isReleasedWhenClosed = false
-        window.backgroundColor = NSColor.windowBackgroundColor
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.backgroundColor = DMTheme.bg
 
         let cv = window.contentView!
-        let pad: CGFloat = 20
-        let railW: CGFloat = 52
-        let mainX = railW + 16
+        cv.wantsLayer = true
+        cv.layer?.backgroundColor = DMTheme.bg.cgColor
+        let pad: CGFloat = 32
+        let contentW = cv.bounds.width - pad * 2
 
-        railView = NSView(frame: NSRect(x: 0, y: 0, width: railW, height: cv.bounds.height))
-        railView.autoresizingMask = [.height, .maxXMargin]
-        railView.wantsLayer = true
-        railView.layer?.backgroundColor = DMTheme.rail.cgColor
-        cv.addSubview(railView)
+        var y = cv.bounds.height - pad
 
-        var y = cv.bounds.height - pad - 22
+        // ── Logo + Wordmark + Status Indicator ──
+        let logoSize: CGFloat = 22
+        let logoView = NSImageView(frame: NSRect(x: pad, y: y - 23, width: logoSize, height: logoSize))
+        logoView.image = createAppLogo(size: logoSize)
+        cv.addSubview(logoView)
 
-        badgeLabel = NSTextField(labelWithString: "IDLE")
-        badgeLabel.font = NSFont.systemFont(ofSize: 10, weight: .bold)
-        badgeLabel.alignment = .center
-        badgeLabel.frame = NSRect(x: cv.bounds.width - pad - 76, y: y, width: 76, height: 22)
-        badgeLabel.autoresizingMask = [.minYMargin, .minXMargin]
-        badgeLabel.wantsLayer = true
-        badgeLabel.layer?.cornerRadius = 11
-        badgeLabel.layer?.backgroundColor = DMTheme.badgeIdle().cgColor
-        badgeLabel.isBordered = false
-        badgeLabel.drawsBackground = false
-        badgeLabel.textColor = DMTheme.ink
-        cv.addSubview(badgeLabel)
-
-        y -= 8
         let wordmark = NSTextField(labelWithString: "deceiverMe")
-        wordmark.font = NSFont.systemFont(ofSize: 26, weight: .thin)
-        wordmark.frame = NSRect(x: mainX, y: y - 30, width: 280, height: 32)
-        wordmark.autoresizingMask = [.minYMargin, .width]
+        wordmark.font = NSFont.systemFont(ofSize: 20, weight: .bold)
+        wordmark.textColor = DMTheme.textPrimary
+        wordmark.frame = NSRect(x: pad + logoSize + 8, y: y - 24, width: 160, height: 24)
         cv.addSubview(wordmark)
 
-        y -= 42
-        let tagline = NSTextField(wrappingLabelWithString:
-            "Quiet cursor choreography — for demos, long sessions, and Macs that won’t stay lucid.")
-        tagline.font = NSFont.systemFont(ofSize: 12, weight: .regular)
-        tagline.textColor = DMTheme.whisper
-        tagline.frame = NSRect(x: mainX, y: y - 40, width: cv.bounds.width - mainX - pad, height: 40)
-        tagline.autoresizingMask = [.minYMargin, .width]
-        cv.addSubview(tagline)
+        // Small status dot instead of the IDLE badge
+        badgeLabel = NSTextField(labelWithString: "")
+        badgeLabel.frame = NSRect(x: pad + logoSize + 170, y: y - 17, width: 8, height: 8)
+        badgeLabel.wantsLayer = true
+        badgeLabel.layer?.cornerRadius = 4
+        badgeLabel.layer?.backgroundColor = DMTheme.danger.cgColor
+        badgeLabel.isBordered = false
+        badgeLabel.drawsBackground = false
+        cv.addSubview(badgeLabel)
 
-        y -= 52
-        heroTimeLabel = NSTextField(labelWithString: "00:00:00")
+        // ── Hero Time ──
+        y -= 46
+        heroTimeLabel = NSTextField(labelWithString: "00 : 00 : 00")
         if #available(macOS 10.15, *) {
-            heroTimeLabel.font = NSFont.monospacedSystemFont(ofSize: 44, weight: .light)
+            heroTimeLabel.font = NSFont.monospacedSystemFont(ofSize: 44, weight: .thin)
         } else {
-            heroTimeLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 44, weight: .light)
+            heroTimeLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 44, weight: .thin)
         }
         heroTimeLabel.textColor = DMTheme.accent
-        heroTimeLabel.frame = NSRect(x: mainX, y: y - 52, width: cv.bounds.width - mainX - pad, height: 54)
-        heroTimeLabel.autoresizingMask = [.minYMargin, .width]
+        heroTimeLabel.alignment = .center
+        heroTimeLabel.frame = NSRect(x: pad, y: y - 52, width: contentW, height: 54)
         cv.addSubview(heroTimeLabel)
 
-        y -= 64
-        let heroCaption = NSTextField(labelWithString: "elapsed on this drift")
+        y -= 58
+        let heroCaption = NSTextField(labelWithString: "elapsed")
         heroCaption.font = NSFont.systemFont(ofSize: 11, weight: .medium)
-        heroCaption.textColor = DMTheme.accentMuted
-        heroCaption.frame = NSRect(x: mainX, y: y - 16, width: 240, height: 16)
-        heroCaption.autoresizingMask = [.minYMargin, .width]
+        heroCaption.textColor = DMTheme.textTertiary
+        heroCaption.alignment = .center
+        heroCaption.frame = NSRect(x: pad, y: y - 14, width: contentW, height: 14)
         cv.addSubview(heroCaption)
 
-        y -= 28
-        let statusCard = NSView(frame: NSRect(x: mainX, y: y - 132, width: cv.bounds.width - mainX - pad, height: 132))
-        statusCard.autoresizingMask = [.minYMargin, .width]
-        statusCard.wantsLayer = true
-        statusCard.layer?.cornerRadius = 14
-        statusCard.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
-        statusCard.layer?.borderWidth = 1
-        if #available(macOS 10.14, *) {
-            statusCard.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.45).cgColor
-        } else {
-            statusCard.layer?.borderColor = NSColor.lightGray.cgColor
-        }
-        cv.addSubview(statusCard)
+        // ── Divider 1 ──
+        y -= 26
+        let div1 = NSView(frame: NSRect(x: pad, y: y, width: contentW, height: 1))
+        div1.wantsLayer = true
+        div1.layer?.backgroundColor = NSColor(calibratedWhite: 1.0, alpha: 0.06).cgColor
+        cv.addSubview(div1)
 
-        var cardY = statusCard.bounds.height - 14
-        let statusContainer = NSView(frame: NSRect(x: 14, y: cardY - 28, width: statusCard.bounds.width - 28, height: 26))
-        statusCard.addSubview(statusContainer)
+        // ── Stats Row ──
+        y -= 8
+        let colW = contentW / 3
+        let statsY = y - 46
 
-        statusDot = NSView(frame: NSRect(x: 0, y: 6, width: 10, height: 10))
-        statusDot.wantsLayer = true
-        statusDot.layer?.cornerRadius = 5
-        statusDot.layer?.backgroundColor = NSColor.systemRed.cgColor
-        statusContainer.addSubview(statusDot)
+        let remainBox = createStatBox(title: "Time Left", value: "120:00:00", frame: NSRect(x: pad, y: statsY, width: colW, height: 46))
+        cv.addSubview(remainBox)
+        remainingTimeLabel = (remainBox.subviews.count > 1 ? remainBox.subviews[1] as? NSTextField : nil) ?? NSTextField()
 
-        statusLabel = NSTextField(labelWithString: "Idle")
-        statusLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
-        statusLabel.textColor = .systemRed
-        statusLabel.frame = NSRect(x: 18, y: 2, width: 160, height: 22)
-        statusContainer.addSubview(statusLabel)
+        let iterBox = createStatBox(title: "Moves", value: "0", frame: NSRect(x: pad + colW, y: statsY, width: colW, height: 46))
+        cv.addSubview(iterBox)
+        iterationLabel = (iterBox.subviews.count > 1 ? iterBox.subviews[1] as? NSTextField : nil) ?? NSTextField()
 
-        cardY -= 40
-        let gridW = statusCard.bounds.width - 28
-        let statsGrid = NSView(frame: NSRect(x: 14, y: cardY - 86, width: gridW, height: 86))
-        statusCard.addSubview(statsGrid)
+        let progBox = createStatBox(title: "Progress", value: "0%", frame: NSRect(x: pad + 2 * colW, y: statsY, width: colW, height: 46))
+        cv.addSubview(progBox)
 
-        let colW = (gridW - 12) / 3
-        let remainingContainer = createStatBox(title: "Horizon", value: "—", frame: NSRect(x: 0, y: 52, width: colW, height: 52))
-        statsGrid.addSubview(remainingContainer)
-        remainingTimeLabel = (remainingContainer.subviews[1] as? NSTextField) ?? NSTextField()
+        // Custom progress track
+        y = statsY - 10
+        let trackH: CGFloat = 3
+        let track = NSView(frame: NSRect(x: pad, y: y, width: contentW, height: trackH))
+        track.wantsLayer = true
+        track.layer?.cornerRadius = 1.5
+        track.layer?.backgroundColor = DMTheme.accentDim.withAlphaComponent(0.25).cgColor
+        cv.addSubview(track)
+        progressTrack = track
 
-        let iterationContainer = createStatBox(title: "Ticks", value: "0", frame: NSRect(x: colW + 6, y: 52, width: colW, height: 52))
-        statsGrid.addSubview(iterationContainer)
-        iterationLabel = (iterationContainer.subviews[1] as? NSTextField) ?? NSTextField()
+        let fill = NSView(frame: NSRect(x: pad, y: y, width: 0, height: trackH))
+        fill.wantsLayer = true
+        fill.layer?.cornerRadius = 1.5
+        fill.layer?.backgroundColor = DMTheme.accent.cgColor
+        cv.addSubview(fill)
+        progressFill = fill
 
-        let progressContainer = NSView(frame: NSRect(x: 2 * colW + 12, y: 52, width: colW, height: 52))
-        statsGrid.addSubview(progressContainer)
-
-        let progressTitle = NSTextField(labelWithString: "Carry-through")
-        progressTitle.font = NSFont.systemFont(ofSize: 10, weight: .semibold)
-        progressTitle.textColor = DMTheme.whisper
-        progressTitle.frame = NSRect(x: 0, y: 34, width: colW, height: 14)
-        progressContainer.addSubview(progressTitle)
-
-        progressBar = NSProgressIndicator(frame: NSRect(x: 0, y: 8, width: colW, height: 18))
+        progressBar = NSProgressIndicator(frame: NSRect(x: pad, y: y - 4, width: contentW, height: 10))
         progressBar.style = .bar
         progressBar.minValue = 0
         progressBar.maxValue = 100
         progressBar.doubleValue = 0
         progressBar.controlSize = .small
-        progressContainer.addSubview(progressBar)
+        progressBar.isHidden = true
+        cv.addSubview(progressBar)
 
-        y -= 148
-        let buttonContainer = NSView(frame: NSRect(x: mainX, y: y - 44, width: cv.bounds.width - mainX - pad, height: 44))
-        buttonContainer.autoresizingMask = [.minYMargin, .width]
-        cv.addSubview(buttonContainer)
+        // ── Divider 2 ──
+        y -= 14
+        let div2 = NSView(frame: NSRect(x: pad, y: y, width: contentW, height: 1))
+        div2.wantsLayer = true
+        div2.layer?.backgroundColor = NSColor(calibratedWhite: 1.0, alpha: 0.06).cgColor
+        cv.addSubview(div2)
 
-        startButton = createModernButton(title: "Begin", action: #selector(startWithPreferences), frame: NSRect(x: 0, y: 4, width: 112, height: 36))
-        buttonContainer.addSubview(startButton)
+        // ── System Monitor ──
+        y -= 8
+        let sysColW = contentW / 3
+        let row1Y = y - 34
+        let row2Y = row1Y - 38
 
-        pauseButton = createModernButton(title: "Hold", action: #selector(pauseMovement), frame: NSRect(x: 124, y: 4, width: 96, height: 36))
+        func makeSys(title: String, val: String, x: CGFloat, yy: CGFloat) -> NSTextField {
+            let t = NSTextField(labelWithString: title)
+            t.font = NSFont.systemFont(ofSize: 9, weight: .medium)
+            t.textColor = DMTheme.textTertiary
+            t.frame = NSRect(x: x, y: yy + 16, width: sysColW, height: 12)
+            cv.addSubview(t)
+            let v = NSTextField(labelWithString: val)
+            if #available(macOS 10.15, *) {
+                v.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .medium)
+            } else {
+                v.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .medium)
+            }
+            v.textColor = DMTheme.textPrimary
+            v.frame = NSRect(x: x, y: yy, width: sysColW, height: 16)
+            cv.addSubview(v)
+            return v
+        }
+
+        cpuTempLabel = makeSys(title: "CPU Temp", val: "— °C", x: pad, yy: row1Y)
+        gpuTempLabel = makeSys(title: "GPU Temp", val: "— °C", x: pad + sysColW, yy: row1Y)
+        cpuUsageLabel = makeSys(title: "CPU %", val: "—%", x: pad + 2 * sysColW, yy: row1Y)
+        ramLabel = makeSys(title: "RAM", val: "—%", x: pad, yy: row2Y)
+        netDownLabel = makeSys(title: "Net Down", val: "— KB/s", x: pad + sysColW, yy: row2Y)
+        netUpLabel = makeSys(title: "Net Up", val: "— KB/s", x: pad + 2 * sysColW, yy: row2Y)
+
+        // ── Status ──
+        y = row2Y - 20
+        statusDot = NSView(frame: NSRect(x: pad, y: y, width: 7, height: 7))
+        statusDot.wantsLayer = true
+        statusDot.layer?.cornerRadius = 3.5
+        statusDot.layer?.backgroundColor = NSColor.systemRed.cgColor
+        cv.addSubview(statusDot)
+
+        statusLabel = NSTextField(labelWithString: "Idle")
+        statusLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        statusLabel.textColor = DMTheme.danger
+        statusLabel.frame = NSRect(x: pad + 14, y: y - 4, width: 100, height: 16)
+        cv.addSubview(statusLabel)
+
+        // ── Buttons ──
+        y -= 28
+        let btnH: CGFloat = 34
+        let btnW: CGFloat = 90
+
+        startButton = createModernButton(title: "Start", action: #selector(startWithPreferences), frame: NSRect(x: pad, y: y - btnH, width: btnW, height: btnH), primary: true)
+        cv.addSubview(startButton)
+
+        pauseButton = createModernButton(title: "Pause", action: #selector(pauseMovement), frame: NSRect(x: pad + btnW + 8, y: y - btnH, width: btnW, height: btnH))
         pauseButton.isEnabled = false
-        buttonContainer.addSubview(pauseButton)
+        pauseButton.alphaValue = 0.35
+        cv.addSubview(pauseButton)
 
-        stopButton = createModernButton(title: "Finish", action: #selector(stopMovementFromMenu), frame: NSRect(x: 230, y: 4, width: 96, height: 36))
+        stopButton = createModernButton(title: "Stop", action: #selector(stopMovementFromMenu), frame: NSRect(x: pad + 2 * (btnW + 8), y: y - btnH, width: btnW, height: btnH))
         stopButton.isEnabled = false
-        buttonContainer.addSubview(stopButton)
+        stopButton.alphaValue = 0.35
+        cv.addSubview(stopButton)
 
-        preferencesButton = createModernButton(title: "Tune drift…", action: #selector(showPreferences), frame: NSRect(x: 336, y: 4, width: 124, height: 36))
-        buttonContainer.addSubview(preferencesButton)
+        preferencesButton = createModernButton(title: "Settings", action: #selector(showPreferences), frame: NSRect(x: cv.bounds.width - pad - btnW, y: y - btnH, width: btnW, height: btnH))
+        cv.addSubview(preferencesButton)
+
+        // ── Footer (centered, two lines) ──
+        let footerW = cv.bounds.width
+
+        let ghBtn = NSButton(title: "GitHub Repo", target: self, action: #selector(openGitHubRepo))
+        ghBtn.isBordered = false
+        ghBtn.font = NSFont.systemFont(ofSize: 9, weight: .medium)
+        ghBtn.contentTintColor = DMTheme.accent
+        ghBtn.alignment = .center
+        ghBtn.frame = NSRect(x: 0, y: 22, width: footerW, height: 16)
+        cv.addSubview(ghBtn)
+
+        let builtByBtn = NSButton(title: "Built by mimran-khan", target: self, action: #selector(openAuthorPage))
+        builtByBtn.isBordered = false
+        builtByBtn.font = NSFont.systemFont(ofSize: 9, weight: .regular)
+        builtByBtn.contentTintColor = DMTheme.textTertiary
+        builtByBtn.alignment = .center
+        builtByBtn.frame = NSRect(x: 0, y: 8, width: footerW, height: 14)
+        cv.addSubview(builtByBtn)
+
+        startSysMonTimer()
+    }
+
+    func createAppLogo(size: CGFloat) -> NSImage {
+        let img = NSImage(size: NSSize(width: size, height: size))
+        img.lockFocus()
+
+        let s = size
+        let arrow = NSBezierPath()
+        // Cursor arrow shape
+        arrow.move(to: NSPoint(x: s * 0.18, y: s * 0.90))
+        arrow.line(to: NSPoint(x: s * 0.18, y: s * 0.12))
+        arrow.line(to: NSPoint(x: s * 0.46, y: s * 0.34))
+        arrow.line(to: NSPoint(x: s * 0.72, y: s * 0.15))
+        arrow.line(to: NSPoint(x: s * 0.82, y: s * 0.32))
+        arrow.line(to: NSPoint(x: s * 0.56, y: s * 0.50))
+        arrow.line(to: NSPoint(x: s * 0.82, y: s * 0.56))
+        arrow.close()
+
+        DMTheme.accent.setFill()
+        arrow.fill()
+
+        // Subtle outline
+        DMTheme.accent.withAlphaComponent(0.4).setStroke()
+        arrow.lineWidth = 0.5
+        arrow.stroke()
+
+        img.unlockFocus()
+        img.isTemplate = false
+        return img
+    }
+
+    @objc func openGitHubRepo() {
+        if let url = URL(string: "https://github.com/mimran-khan/deceiverme") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    @objc func openAuthorPage() {
+        if let url = URL(string: "https://mimran-khan.github.io/") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    func startSysMonTimer() {
+        sysMonTimer?.invalidate()
+        let t = Timer(timeInterval: 3.0, repeats: true) { [weak self] _ in
+            self?.updateSysMonLabels()
+        }
+        t.tolerance = 1.0
+        RunLoop.main.add(t, forMode: .common)
+        sysMonTimer = t
+        updateSysMonLabels()
+    }
+
+    func updateSysMonLabels() {
+        // CPU usage via host_processor_info
+        var numCPUsU: mach_msg_type_number_t = 0
+        var cpuInfo: processor_info_array_t?
+        var numCpuInfo: mach_msg_type_number_t = 0
+        let result = host_processor_info(mach_host_self(), PROCESSOR_CPU_LOAD_INFO, &numCPUsU, &cpuInfo, &numCpuInfo)
+        if result == KERN_SUCCESS, let cpuInfo = cpuInfo {
+            var totalUser: Int32 = 0, totalSys: Int32 = 0, totalIdle: Int32 = 0
+            for i in 0..<Int(numCPUsU) {
+                let offset = Int(CPU_STATE_MAX) * i
+                totalUser += cpuInfo[offset + Int(CPU_STATE_USER)] + cpuInfo[offset + Int(CPU_STATE_NICE)]
+                totalSys += cpuInfo[offset + Int(CPU_STATE_SYSTEM)]
+                totalIdle += cpuInfo[offset + Int(CPU_STATE_IDLE)]
+            }
+            let total = totalUser + totalSys + totalIdle
+            let usage = total > 0 ? Double(totalUser + totalSys) / Double(total) * 100 : 0
+            let cpuStr = String(format: "%.1f%%", usage)
+            cpuUsageLabel.stringValue = cpuStr
+            lastCpuUsage = cpuStr
+            menuCpuUsageItem?.title = "CPU: \(cpuStr)"
+            vm_deallocate(mach_task_self_, vm_address_t(bitPattern: cpuInfo), vm_size_t(numCpuInfo) * vm_size_t(MemoryLayout<Int32>.stride))
+        }
+
+        // RAM
+        var vmStats = vm_statistics64()
+        var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)
+        let vmResult = withUnsafeMutablePointer(to: &vmStats) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count)
+            }
+        }
+        if vmResult == KERN_SUCCESS {
+            let pageSize = UInt64(vm_kernel_page_size)
+            let active = UInt64(vmStats.active_count) * pageSize
+            let wired = UInt64(vmStats.wire_count) * pageSize
+            let compressed = UInt64(vmStats.compressor_page_count) * pageSize
+            let totalRam = ProcessInfo.processInfo.physicalMemory
+            let used = active + wired + compressed
+            let pct = totalRam > 0 ? Double(used) / Double(totalRam) * 100 : 0
+            let ramStr = String(format: "%.0f%%", pct)
+            ramLabel.stringValue = ramStr
+            lastRam = ramStr
+            menuRamItem?.title = "RAM: \(ramStr)"
+        }
+
+        // Network
+        var ifaddr: UnsafeMutablePointer<ifaddrs>?
+        if getifaddrs(&ifaddr) == 0, let firstAddr = ifaddr {
+            var totalIn: UInt64 = 0, totalOut: UInt64 = 0
+            var ptr: UnsafeMutablePointer<ifaddrs>? = firstAddr
+            while let addr = ptr {
+                if addr.pointee.ifa_addr.pointee.sa_family == UInt8(AF_LINK) {
+                    let data = unsafeBitCast(addr.pointee.ifa_data, to: UnsafeMutablePointer<if_data>.self)
+                    totalIn += UInt64(data.pointee.ifi_ibytes)
+                    totalOut += UInt64(data.pointee.ifi_obytes)
+                }
+                ptr = addr.pointee.ifa_next
+            }
+            freeifaddrs(ifaddr)
+            if prevBytesIn > 0 {
+                let dIn = totalIn >= prevBytesIn ? totalIn - prevBytesIn : 0
+                let dOut = totalOut >= prevBytesOut ? totalOut - prevBytesOut : 0
+                let kbIn = Double(dIn) / 1024.0 / 3.0
+                let kbOut = Double(dOut) / 1024.0 / 3.0
+                let dnStr = String(format: "%.1f KB/s", kbIn)
+                let upStr = String(format: "%.1f KB/s", kbOut)
+                netDownLabel.stringValue = dnStr
+                netUpLabel.stringValue = upStr
+                lastNetDown = dnStr
+                lastNetUp = upStr
+                menuNetItem?.title = "Net: \(dnStr) down / \(upStr) up"
+            }
+            prevBytesIn = totalIn
+            prevBytesOut = totalOut
+        }
+
+        updateTemperatures()
+    }
+
+    func updateTemperatures() {
+        let temps = readSMCTemperatures()
+        setTempDisplay(temps.cpu, temps.gpu)
+    }
+
+    private func readSMCTemperatures() -> (cpu: String, gpu: String) {
+        if smcConnection == 0 {
+            openSMCConnection()
+        }
+        guard smcConnection != 0 else { return ("N/A", "N/A") }
+
+        let cpuKeys = ["Tp01", "Tp05", "Tp09", "Tp0D", "Tp0T", "Tc0c", "TC0P", "Tc1c", "Tc0C"]
+        let gpuKeys = ["Tg05", "Tg0D", "Tg0T", "Tg0P", "Tg0c", "TG0P"]
+
+        var cpuTemp: Double = 0
+        for key in cpuKeys {
+            let val = smcReadKey(conn: smcConnection, key: key)
+            if val > 10 && val < 120 {
+                cpuTemp = max(cpuTemp, val)
+            }
+        }
+
+        var gpuTemp: Double = 0
+        for key in gpuKeys {
+            let val = smcReadKey(conn: smcConnection, key: key)
+            if val > 10 && val < 120 {
+                gpuTemp = max(gpuTemp, val)
+            }
+        }
+
+        let cpuStr = cpuTemp > 0 ? String(format: "%.0f°C", cpuTemp) : "—"
+        let gpuStr = gpuTemp > 0 ? String(format: "%.0f°C", gpuTemp) : "—"
+        return (cpuStr, gpuStr)
+    }
+
+    private func smcReadKey(conn: io_connect_t, key: String) -> Double {
+        var inputStruct = SMCKeyData_t()
+        var outputStruct = SMCKeyData_t()
+
+        let chars = Array(key.utf8)
+        guard chars.count == 4 else { return 0 }
+        inputStruct.key = UInt32(chars[0]) << 24 | UInt32(chars[1]) << 16 | UInt32(chars[2]) << 8 | UInt32(chars[3])
+        inputStruct.data8 = SMCKeyData_t.kSMCGetKeyInfo
+
+        let structSize = MemoryLayout<SMCKeyData_t>.size
+        var outputSize = structSize
+        let infoResult = IOConnectCallStructMethod(conn, UInt32(SMCKeyData_t.kSMCHandleYPCEvent),
+                                                    &inputStruct, structSize,
+                                                    &outputStruct, &outputSize)
+        guard infoResult == kIOReturnSuccess else { return 0 }
+
+        let dataSize = outputStruct.keyInfo.dataSize
+        let dataType = outputStruct.keyInfo.dataType
+
+        inputStruct.keyInfo.dataSize = dataSize
+        inputStruct.keyInfo.dataType = dataType
+        inputStruct.data8 = SMCKeyData_t.kSMCReadKey
+
+        outputSize = structSize
+        let readResult = IOConnectCallStructMethod(conn, UInt32(SMCKeyData_t.kSMCHandleYPCEvent),
+                                                    &inputStruct, structSize,
+                                                    &outputStruct, &outputSize)
+        guard readResult == kIOReturnSuccess else { return 0 }
+
+        let bytes = outputStruct.bytes
+
+        if dataType == SMCKeyData_t.dataType_flt {
+            var value: Float = 0
+            withUnsafeMutablePointer(to: &value) { ptr in
+                ptr.withMemoryRebound(to: UInt8.self, capacity: 4) { bytePtr in
+                    bytePtr[0] = bytes.0
+                    bytePtr[1] = bytes.1
+                    bytePtr[2] = bytes.2
+                    bytePtr[3] = bytes.3
+                }
+            }
+            return Double(value)
+        }
+
+        if dataType == SMCKeyData_t.dataType_sp78 {
+            let raw = Int16(bytes.0) << 8 | Int16(bytes.1)
+            let val = Double(raw) / 256.0
+            return val
+        }
+
+        if dataType == SMCKeyData_t.dataType_ui8 || dataType == SMCKeyData_t.dataType_ui16 {
+            return Double(bytes.0)
+        }
+
+        return 0
+    }
+
+    private func setTempDisplay(_ cpu: String, _ gpu: String) {
+        let update = {
+            self.cpuTempLabel.stringValue = cpu
+            self.gpuTempLabel.stringValue = gpu
+            self.lastCpuTemp = cpu
+            self.lastGpuTemp = gpu
+            self.menuCpuTempItem?.title = "CPU Temp: \(cpu)"
+            self.menuGpuTempItem?.title = "GPU Temp: \(gpu)"
+        }
+        if Thread.isMainThread {
+            update()
+        } else {
+            DispatchQueue.main.async(execute: update)
+        }
+    }
+
+    // MARK: - Menu Bar Banner Cycling
+
+    func refreshBannerNow() {
+        guard let button = statusItem.button else { return }
+        let elapsed = activeElapsed()
+        let label: String
+        if isRunning && startTime != nil {
+            label = isPaused ? "Paused" : formatTime(elapsed)
+        } else {
+            label = "Idle"
+        }
+        button.image = createMenuBarIcon()
+        button.title = " \(label)"
+        bannerCycleIndex = 0
+    }
+
+    func updateBannerTimer() {
+        guard bannerCycleIndex == 0, let button = statusItem.button else { return }
+        let elapsed = activeElapsed()
+        let label: String
+        if isRunning && startTime != nil {
+            label = isPaused ? "Paused" : formatTime(elapsed)
+        } else {
+            label = "Idle"
+        }
+        button.title = " \(label)"
+    }
+
+    func startBannerCycleTimer() {
+        bannerCycleTimer?.invalidate()
+        let t = Timer(timeInterval: 7.0, repeats: true) { [weak self] _ in
+            self?.cycleBannerText()
+        }
+        t.tolerance = 0.5
+        RunLoop.main.add(t, forMode: .common)
+        bannerCycleTimer = t
+    }
+
+    func cycleBannerText() {
+        guard let button = statusItem.button else { return }
+
+        let elapsed = activeElapsed()
+        let timerStr = isRunning && startTime != nil ? formatTime(elapsed) : "00:00:00"
+        let labels = [
+            timerStr,
+            "CPU \(lastCpuTemp)",
+            "GPU \(lastGpuTemp)",
+            "CPU \(lastCpuUsage)",
+            "RAM \(lastRam)",
+            "\(lastNetDown) dn / \(lastNetUp) up"
+        ]
+
+        bannerCycleIndex = (bannerCycleIndex + 1) % labels.count
+
+        button.image = createMenuBarIcon()
+        button.title = " \(labels[bannerCycleIndex])"
+    }
+
+    // MARK: - Auto-Update from GitHub
+
+    func checkForGitHubUpdate() {
+        let urlStr = "https://api.github.com/repos/mimran-khan/deceiverme/releases/latest"
+        guard let url = URL(string: urlStr) else { return }
+
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
+        request.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
+        request.setValue("deceiverMe/\(AppDelegate.appVersion)", forHTTPHeaderField: "User-Agent")
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            guard let self = self,
+                  error == nil,
+                  let data = data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let tagName = json["tag_name"] as? String else { return }
+
+            let remoteVersion = tagName.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
+            let localVersion = AppDelegate.appVersion
+
+            if self.isNewerVersion(remote: remoteVersion, local: localVersion) {
+                let htmlUrl = json["html_url"] as? String ?? "https://github.com/mimran-khan/deceiverme/releases"
+                DispatchQueue.main.async {
+                    self.showUpdateAlert(remoteVersion: remoteVersion, downloadURL: htmlUrl)
+                }
+            }
+        }.resume()
+    }
+
+    private func isNewerVersion(remote: String, local: String) -> Bool {
+        let r = remote.split(separator: ".").compactMap { Int($0) }
+        let l = local.split(separator: ".").compactMap { Int($0) }
+        for i in 0..<max(r.count, l.count) {
+            let rv = i < r.count ? r[i] : 0
+            let lv = i < l.count ? l[i] : 0
+            if rv > lv { return true }
+            if rv < lv { return false }
+        }
+        return false
+    }
+
+    private func showUpdateAlert(remoteVersion: String, downloadURL: String) {
+        let alert = NSAlert()
+        alert.messageText = "Update Available"
+        alert.informativeText = "deceiverMe v\(remoteVersion) is available. You are running v\(AppDelegate.appVersion)."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Download")
+        alert.addButton(withTitle: "Later")
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            if let url = URL(string: downloadURL) {
+                NSWorkspace.shared.open(url)
+            }
+        }
     }
 
     func createStatBox(title: String, value: String, frame: NSRect) -> NSView {
         let container = NSView(frame: frame)
 
         let titleLabel = NSTextField(labelWithString: title)
-        titleLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
-        titleLabel.textColor = .secondaryLabelColor
-        titleLabel.frame = NSRect(x: 0, y: frame.height - 20, width: frame.width, height: 16)
+        titleLabel.font = NSFont.systemFont(ofSize: 9, weight: .medium)
+        titleLabel.textColor = DMTheme.textTertiary
+        titleLabel.alignment = .center
+        titleLabel.frame = NSRect(x: 2, y: frame.height - 14, width: frame.width - 4, height: 12)
         container.addSubview(titleLabel)
 
         let valueLabel = NSTextField(labelWithString: value)
         if #available(macOS 10.15, *) {
-            valueLabel.font = NSFont.monospacedSystemFont(ofSize: 18, weight: .semibold)
+            valueLabel.font = NSFont.monospacedSystemFont(ofSize: 16, weight: .medium)
         } else {
-            valueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 18, weight: .semibold)
+            valueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 16, weight: .medium)
         }
-        valueLabel.frame = NSRect(x: 0, y: 4, width: frame.width, height: 24)
+        valueLabel.textColor = DMTheme.textPrimary
+        valueLabel.alignment = .center
+        valueLabel.frame = NSRect(x: 2, y: 4, width: frame.width - 4, height: 22)
         container.addSubview(valueLabel)
 
         return container
     }
 
-    func createModernButton(title: String, action: Selector, frame: NSRect) -> NSButton {
+    func createModernButton(title: String, action: Selector, frame: NSRect, primary: Bool = false) -> NSButton {
         let button = NSButton(title: title, target: self, action: action)
         button.frame = frame
-        button.bezelStyle = .rounded
-        button.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+        button.isBordered = false
+        button.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
         button.wantsLayer = true
-        button.layer?.cornerRadius = 8
+        button.layer?.cornerRadius = frame.height / 2
+
+        if primary {
+            button.layer?.backgroundColor = DMTheme.accent.cgColor
+            button.contentTintColor = NSColor(calibratedRed: 0.05, green: 0.05, blue: 0.08, alpha: 1)
+        } else {
+            button.layer?.backgroundColor = NSColor.clear.cgColor
+            button.layer?.borderWidth = 1
+            button.layer?.borderColor = DMTheme.textTertiary.cgColor
+            button.contentTintColor = DMTheme.textSecondary
+        }
         return button
     }
 
@@ -576,7 +1187,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             backing: .buffered,
             defer: false
         )
-        configWindow.title = "Tune drift — deceiverMe"
+        configWindow.title = "Settings — deceiverMe"
         configWindow.center()
         configWindow.isReleasedWhenClosed = false
 
@@ -584,37 +1195,37 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let padding: CGFloat = 24
         var yPosition = contentView.bounds.height - padding - 30
 
-        let titleLabel = NSTextField(labelWithString: "Motion recipe")
+        let titleLabel = NSTextField(labelWithString: "Settings")
         titleLabel.font = NSFont.systemFont(ofSize: 16, weight: .semibold)
         titleLabel.frame = NSRect(x: padding, y: yPosition, width: 320, height: 22)
         contentView.addSubview(titleLabel)
         yPosition -= 36
 
-        pixelTextField = createConfigField(label: "Stride (pixels):", value: String(Int(pixelMove)), y: &yPosition, contentView: contentView, padding: padding)
+        pixelTextField = createConfigField(label: "Move distance (pixels):", value: String(Int(pixelMove)), y: &yPosition, contentView: contentView, padding: padding)
         directionPopUp = createConfigPopUp(
-            label: "Bearing:",
-            items: ["Drift right", "Drift left", "Drift up", "Drift down", "Orbit"],
+            label: "Direction:",
+            items: ["Move right", "Move left", "Move up", "Move down", "Circle"],
             selected: direction.rawValue,
             y: &yPosition,
             contentView: contentView,
             padding: padding
         )
-        intervalTextField = createConfigField(label: "Cadence (seconds):", value: String(Int(moveInterval)), y: &yPosition, contentView: contentView, padding: padding)
+        intervalTextField = createConfigField(label: "Interval (seconds):", value: String(Int(moveInterval)), y: &yPosition, contentView: contentView, padding: padding)
 
-        let sessionLabel = NSTextField(labelWithString: "Default horizon:")
+        let sessionLabel = NSTextField(labelWithString: "Session mode:")
         sessionLabel.frame = NSRect(x: padding, y: yPosition, width: 180, height: 20)
         contentView.addSubview(sessionLabel)
         sessionModePopUp = NSPopUpButton(frame: NSRect(x: 200, y: yPosition - 4, width: 220, height: 24))
-        sessionModePopUp.addItems(withTitles: ["Open end", "Timed arc (hours below)", "Land at date & time"])
+        sessionModePopUp.addItems(withTitles: ["Run forever", "Fixed duration", "Stop at date & time"])
         sessionModePopUp.selectItem(at: prefsSessionKind.rawValue)
         sessionModePopUp.target = self
         sessionModePopUp.action = #selector(sessionModeChanged)
         contentView.addSubview(sessionModePopUp)
         yPosition -= 40
 
-        durationTextField = createConfigField(label: "Arc length (hours):", value: String(Int(totalDuration / 3600)), y: &yPosition, contentView: contentView, padding: padding)
+        durationTextField = createConfigField(label: "Duration (hours):", value: String(Int(totalDuration / 3600)), y: &yPosition, contentView: contentView, padding: padding)
 
-        untilLabel = NSTextField(labelWithString: "Land at:")
+        untilLabel = NSTextField(labelWithString: "Stop at:")
         untilLabel.frame = NSRect(x: padding, y: yPosition, width: 180, height: 20)
         contentView.addSubview(untilLabel)
         untilDatePicker = NSDatePicker(frame: NSRect(x: 200, y: yPosition - 4, width: 220, height: 24))
@@ -624,14 +1235,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         contentView.addSubview(untilDatePicker)
         yPosition -= 40
 
-        notifyCheckBox = NSButton(checkboxWithTitle: "Ping when this drift lands", target: nil, action: nil)
+        notifyCheckBox = NSButton(checkboxWithTitle: "Notify when session ends", target: nil, action: nil)
         notifyCheckBox.frame = NSRect(x: padding, y: yPosition, width: 360, height: 20)
         notifyCheckBox.state = notifyOnSessionEnd ? .on : .off
         contentView.addSubview(notifyCheckBox)
         yPosition -= 28
 
         keepAwakeCheckBox = NSButton(
-            checkboxWithTitle: "Keep display & system awake while drifting (stops dimming, sleep, and most auto-lock)",
+            checkboxWithTitle: "Keep display & system awake while running (stops dimming, sleep, and most auto-lock)",
             target: nil,
             action: nil
         )
@@ -655,7 +1266,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         contentView.addSubview(hotkeyCaptureButton)
         yPosition -= 44
 
-        saveButton = createModernButton(title: "Save recipe", action: #selector(savePreferences), frame: NSRect(x: padding, y: yPosition, width: 120, height: 32))
+        saveButton = createModernButton(title: "Save", action: #selector(savePreferences), frame: NSRect(x: padding, y: yPosition, width: 120, height: 32))
         contentView.addSubview(saveButton)
 
         let cancelButton = createModernButton(title: "Close", action: #selector(closePreferences), frame: NSRect(x: 152, y: yPosition, width: 100, height: 32))
@@ -823,7 +1434,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         guard notifyOnSessionEnd else { return }
         if #available(macOS 10.14, *) {
             let content = UNMutableNotificationContent()
-            content.title = "Drift landed"
+            content.title = "Session ended"
             content.subtitle = "deceiverMe"
             content.body = reason
             let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
@@ -851,7 +1462,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             if powerActivityToken == nil {
                 powerActivityToken = ProcessInfo.processInfo.beginActivity(
                     options: [.idleDisplaySleepDisabled, .idleSystemSleepDisabled],
-                    reason: "deceiverMe active drift session"
+                    reason: "deceiverMe active session"
                 )
             }
         } else {
@@ -1014,10 +1625,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         updateIdleSleepAssertion()
         updateMenu()
         updateDesktopWindow()
+        refreshBannerNow()
 
-        mouseMoveTimer = Timer.scheduledTimer(withTimeInterval: moveInterval, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: moveInterval, repeats: true) { [weak self] _ in
             self?.moveMouse()
         }
+        RunLoop.main.add(timer, forMode: .common)
+        mouseMoveTimer = timer
 
         moveMouse()
     }
@@ -1032,9 +1646,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 pauseStartTime = nil
             }
 
-            mouseMoveTimer = Timer.scheduledTimer(withTimeInterval: moveInterval, repeats: true) { [weak self] _ in
+            let timer = Timer(timeInterval: moveInterval, repeats: true) { [weak self] _ in
                 self?.moveMouse()
             }
+            RunLoop.main.add(timer, forMode: .common)
+            mouseMoveTimer = timer
         } else {
             isPaused = true
             pauseStartTime = Date()
@@ -1045,6 +1661,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         updateIdleSleepAssertion()
         updateMenu()
         updateDesktopWindow()
+        refreshBannerNow()
     }
 
     func stopMovement(notify: Bool, reason: String?) {
@@ -1074,6 +1691,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         updateMenu()
         updateDesktopWindow()
+        refreshBannerNow()
     }
 
     @objc func quitApp() {
@@ -1139,20 +1757,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let elapsed = activeElapsed()
 
         guard isRunning, startTime != nil else {
-            statusMenuItem.title = "State — Idle"
-            elapsedTimeMenuItem.title = "Clock: 00:00:00"
+            statusMenuItem.title = "Status — Idle"
+            elapsedTimeMenuItem.title = "Elapsed: 00:00:00"
             let preview = remainingPreviewWhenStopped()
-            remainingTimeMenuItem.title = "Horizon: \(preview)"
-            iterationMenuItem.title = "Ticks: 0"
-            progressMenuItem.title = "Carry: 0%"
+            remainingTimeMenuItem.title = "Time left: \(preview)"
+            iterationMenuItem.title = "Moves: 0"
+            progressMenuItem.title = "Progress: 0%"
 
             pauseMenuItem.isEnabled = false
             stopMenuItem.isEnabled = false
 
-            if let button = statusItem.button {
-                button.image = createMenuBarIcon()
-                button.title = ""
-            }
             return
         }
 
@@ -1166,28 +1780,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
 
         if shouldAutoStop(elapsedActive: elapsed) {
-            stopMovement(notify: true, reason: "Horizon reached — timer or wall clock.")
+            stopMovement(notify: true, reason: "Session ended — timer or scheduled stop.")
             return
         }
 
-        if let button = statusItem.button {
-            button.image = createMenuBarIcon()
-            if isPaused {
-                statusMenuItem.title = "State — On hold"
-                button.title = " \(elapsedString) · hold"
-            } else {
-                statusMenuItem.title = "State — Live"
-                button.title = " \(elapsedString)"
-            }
+        if isPaused {
+            statusMenuItem.title = "Status — Paused"
+        } else {
+            statusMenuItem.title = "Status — Running"
         }
 
-        elapsedTimeMenuItem.title = "Clock: \(elapsedString)"
-        remainingTimeMenuItem.title = "Horizon: \(remText)"
-        iterationMenuItem.title = "Ticks: \(iteration)"
-        progressMenuItem.title = activeSessionEnd == .indefinite ? "Carry: —" : String(format: "Carry: %.1f%%", progressPercent)
+        elapsedTimeMenuItem.title = "Elapsed: \(elapsedString)"
+        remainingTimeMenuItem.title = "Time left: \(remText)"
+        iterationMenuItem.title = "Moves: \(iteration)"
+        progressMenuItem.title = activeSessionEnd == .indefinite ? "Progress: —" : String(format: "Progress: %.1f%%", progressPercent)
 
         pauseMenuItem.isEnabled = true
-        pauseMenuItem.title = isPaused ? "Continue" : "Hold"
+        pauseMenuItem.title = isPaused ? "Resume" : "Pause"
         stopMenuItem.isEnabled = true
     }
 
@@ -1210,21 +1819,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         guard isRunning, startTime != nil else {
             statusLabel.stringValue = "Idle"
-            statusLabel.textColor = .systemRed
-            statusDot.layer?.backgroundColor = NSColor.systemRed.cgColor
-            badgeLabel.stringValue = "IDLE"
-            badgeLabel.layer?.backgroundColor = DMTheme.badgeIdle().cgColor
-            heroTimeLabel.stringValue = "00:00:00"
+            statusLabel.textColor = DMTheme.danger
+            statusDot.layer?.backgroundColor = DMTheme.danger.cgColor
+            badgeLabel.layer?.backgroundColor = DMTheme.danger.cgColor
+            heroTimeLabel.stringValue = "00 : 00 : 00"
             remainingTimeLabel.stringValue = remainingPreviewWhenStopped()
             iterationLabel.stringValue = "0"
-            progressBar.doubleValue = 0
-            progressBar.isIndeterminate = false
-            progressBar.stopAnimation(nil)
+            progressBar.isHidden = true
+            progressFill?.frame.size.width = 0
+            progressTrack?.isHidden = false
 
             startButton.isEnabled = true
+            startButton.alphaValue = 1.0
+            startButton.layer?.backgroundColor = DMTheme.accent.cgColor
             pauseButton.isEnabled = false
+            pauseButton.alphaValue = 0.35
             stopButton.isEnabled = false
-            pauseButton.title = "Hold"
+            stopButton.alphaValue = 0.35
+            pauseButton.title = "Pause"
             return
         }
 
@@ -1237,37 +1849,47 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
 
         if activeSessionEnd == .indefinite {
+            progressBar.isHidden = false
             progressBar.isIndeterminate = true
             progressBar.startAnimation(nil)
+            progressTrack?.isHidden = true
+            progressFill?.isHidden = true
         } else {
-            progressBar.isIndeterminate = false
-            progressBar.stopAnimation(nil)
-            progressBar.doubleValue = progressPercent
+            progressBar.isHidden = true
+            progressTrack?.isHidden = false
+            progressFill?.isHidden = false
+            if let track = progressTrack {
+                progressFill?.frame.size.width = track.frame.width * CGFloat(progressPercent / 100.0)
+            }
         }
 
         if isPaused {
-            statusLabel.stringValue = "On hold"
-            statusLabel.textColor = .systemOrange
-            statusDot.layer?.backgroundColor = NSColor.systemOrange.cgColor
-            badgeLabel.stringValue = "HOLD"
-            badgeLabel.layer?.backgroundColor = DMTheme.badgeHold().cgColor
-            pauseButton.title = "Continue"
+            statusLabel.stringValue = "Paused"
+            statusLabel.textColor = DMTheme.warning
+            statusDot.layer?.backgroundColor = DMTheme.warning.cgColor
+            badgeLabel.layer?.backgroundColor = DMTheme.warning.cgColor
+            pauseButton.title = "Resume"
         } else {
-            statusLabel.stringValue = "Live"
-            statusLabel.textColor = .systemGreen
-            statusDot.layer?.backgroundColor = NSColor.systemGreen.cgColor
-            badgeLabel.stringValue = "LIVE"
-            badgeLabel.layer?.backgroundColor = DMTheme.badgeLive().cgColor
-            pauseButton.title = "Hold"
+            statusLabel.stringValue = "Running"
+            statusLabel.textColor = DMTheme.success
+            statusDot.layer?.backgroundColor = DMTheme.success.cgColor
+            badgeLabel.layer?.backgroundColor = DMTheme.success.cgColor
+            pauseButton.title = "Pause"
         }
 
-        heroTimeLabel.stringValue = formatTime(elapsed)
+        heroTimeLabel.stringValue = formatTime(elapsed).replacingOccurrences(of: ":", with: " : ")
         remainingTimeLabel.stringValue = remText
         iterationLabel.stringValue = "\(iteration)"
 
         startButton.isEnabled = false
+        startButton.alphaValue = 0.3
+        startButton.layer?.backgroundColor = DMTheme.accent.withAlphaComponent(0.3).cgColor
         pauseButton.isEnabled = true
+        pauseButton.alphaValue = 1.0
+        pauseButton.contentTintColor = DMTheme.accent
         stopButton.isEnabled = true
+        stopButton.alphaValue = 1.0
+        stopButton.contentTintColor = DMTheme.danger
     }
 
     func formatTime(_ timeInterval: TimeInterval) -> String {

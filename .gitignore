@@ -2,6 +2,10 @@
 deceiverMe.app/
 dist/
 
+# Test artifacts
+test_smc
+test_smc.swift
+
 # macOS
 .DS_Store
 

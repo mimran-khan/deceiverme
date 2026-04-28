@@ -36,6 +36,7 @@ FRAMEWORKS=(
   -framework CoreGraphics
   -framework Carbon
   -framework UserNotifications
+  -framework IOKit
 )
 
 compile() {
