@@ -1,103 +1,105 @@
 <div align="center">
 
-# deceiverMe
+<img src="https://img.shields.io/badge/deceiver-Me-000000?style=for-the-badge&logo=apple&logoColor=white" alt="deceiverMe" height="40"/>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![macOS](https://img.shields.io/badge/macOS-11%2B-000000?logo=apple&logoColor=white)](https://developer.apple.com/macos/)
-[![Swift](https://img.shields.io/badge/Swift-5.x-F05138?logo=swift&logoColor=white)](https://swift.org)
-[![GitHub release](https://img.shields.io/github/v/release/mimran-khan/deceiverme?include_prereleases&logo=github)](https://github.com/mimran-khan/deceiverme/releases/latest)
-[![GitHub stars](https://img.shields.io/github/stars/mimran-khan/deceiverme?style=social)](https://github.com/mimran-khan/deceiverme/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/mimran-khan/deceiverme?style=social)](https://github.com/mimran-khan/deceiverme/network/members)
-[![GitHub watchers](https://img.shields.io/github/watchers/mimran-khan/deceiverme?style=social)](https://github.com/mimran-khan/deceiverme/watchers)
-[![GitHub issues](https://img.shields.io/github/issues/mimran-khan/deceiverme)](https://github.com/mimran-khan/deceiverme/issues)
-[![GitHub downloads](https://img.shields.io/github/downloads/mimran-khan/deceiverme/total?logo=github)](https://github.com/mimran-khan/deceiverme/releases)
-[![Profile views](https://komarev.com/ghpvc/?username=mimran-khan&label=repo%20views&color=0e75b6&style=flat)](https://github.com/mimran-khan/deceiverme)
-
-**Native macOS menu bar app — timed cursor movement, sessions, system monitoring, and idle prevention.**
-
-[Overview](#overview) · [Screenshots](#screenshots) · [Features](#features) · [User Guide](#user-guide) · [Build](#build) · [Reference](#reference) · [Troubleshooting](#troubleshooting)
+### Native macOS menu bar app for timed cursor movement, session management, system monitoring, and idle prevention.
 
 <br/>
 
+[![Release](https://img.shields.io/github/v/release/mimran-khan/deceiverme?include_prereleases&style=for-the-badge&logo=github&color=blue)](https://github.com/mimran-khan/deceiverme/releases/latest)
+[![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
+[![macOS](https://img.shields.io/badge/macOS-11%2B-000000?style=for-the-badge&logo=apple&logoColor=white)](https://developer.apple.com/macos/)
+[![Swift](https://img.shields.io/badge/Swift-5.x-F05138?style=for-the-badge&logo=swift&logoColor=white)](https://swift.org)
+
+[![Stars](https://img.shields.io/github/stars/mimran-khan/deceiverme?style=for-the-badge&logo=github&label=Stars)](https://github.com/mimran-khan/deceiverme/stargazers)
+[![Forks](https://img.shields.io/github/forks/mimran-khan/deceiverme?style=for-the-badge&logo=github&label=Forks)](https://github.com/mimran-khan/deceiverme/network/members)
+[![Issues](https://img.shields.io/github/issues/mimran-khan/deceiverme?style=for-the-badge&logo=github&label=Issues)](https://github.com/mimran-khan/deceiverme/issues)
+[![Downloads](https://img.shields.io/github/downloads/mimran-khan/deceiverme/total?style=for-the-badge&logo=github&label=Downloads)](https://github.com/mimran-khan/deceiverme/releases)
+
+[![Watchers](https://img.shields.io/github/watchers/mimran-khan/deceiverme?style=social)](https://github.com/mimran-khan/deceiverme/watchers)
+[![Repo Views](https://komarev.com/ghpvc/?username=mimran-khan&label=repo%20views&color=0e75b6&style=flat)](https://github.com/mimran-khan/deceiverme)
+
+<br/>
+
+[**Overview**](#overview) · [**Screenshots**](#screenshots) · [**Features**](#features) · [**Quick Start**](#quick-start) · [**Build**](#build-from-source) · [**Contributing**](#contributing) · [**License**](#license)
+
 </div>
+
+<br/>
 
 ## Screenshots
 
 <p align="center">
-  <img src="screenshots/dashboard.png" alt="Dashboard" width="400"/>
-  &nbsp;&nbsp;&nbsp;
+  <img src="screenshots/dashboard.png" alt="Dashboard" width="420"/>
+  &nbsp;&nbsp;&nbsp;&nbsp;
   <img src="screenshots/settings.png" alt="Settings" width="380"/>
 </p>
 
----
+<p align="center"><sub><b>Left:</b> Dashboard with live session stats &nbsp;|&nbsp; <b>Right:</b> Settings panel</sub></p>
+
+<br/>
 
 ## Overview
 
-deceiverMe moves the cursor on a schedule (configurable pixels, direction, and interval). Use it for **demos**, **long sessions**, or **keeping the display and system from idling** — only on **machines you own or are allowed to control**.
+deceiverMe moves the cursor on a configurable schedule — set the pixel step, direction, and interval. Use it for **demos**, **long-running sessions**, or **keeping the display and system from idling** on machines you own or are authorised to control.
+
+> **Single-file, zero dependencies.** One Swift file + one `Info.plist`. Compiles to a universal binary (Intel + Apple Silicon) with ad-hoc codesign.
 
 | | |
 | :--- | :--- |
-| **Bundle** | `deceiverMe.app` |
-| **Executable** | `MouseMoverNative` |
-| **Bundle ID** | `com.deceiverme.app` |
-| **Source** | Single Swift file + `packaging/Info.plist` |
+| **App** | `deceiverMe.app` |
+| **Source** | [`MouseMoverNative.swift`](MouseMoverNative/MouseMoverNative.swift) + [`Info.plist`](packaging/Info.plist) |
 | **Build** | `./build.sh` → universal binary, ad-hoc codesign, optional zip |
 | **Repo** | [github.com/mimran-khan/deceiverme](https://github.com/mimran-khan/deceiverme) |
 | **Author** | [mimran-khan](https://mimran-khan.github.io/) |
+
+<p align="right">(<a href="#screenshots">back to top</a>)</p>
 
 ---
 
 ## Features
 
-### Cursor movement
+### Cursor Movement
 
-- **Pixels per move** — configurable step size (default `5`)
-- **Direction** — right, left, up, down, or **circular** (small circular step)
-- **Interval** — seconds between moves (default `10`)
-- Uses **CoreGraphics** (`CGEvent` / `.cghidEventTap`); cursor is clamped inside the **main display** with a margin
+- **Configurable step size** — pixels per move (default `5`)
+- **Five directions** — right, left, up, down, or **circular**
+- **Adjustable interval** — seconds between moves (default `10`)
+- **Safe bounds** — cursor clamped to main display via CoreGraphics
 
-### Sessions
+### Session Modes
 
-| Mode | Behavior |
+| Mode | Behaviour |
 | :--- | :--- |
-| **Run forever** | Runs until you stop |
-| **Fixed duration** | Stops after **N hours** of **active** time (paused time does not count) |
-| **Stop at date & time** | Stops when the system clock passes the chosen moment |
+| **Run forever** | Runs until manually stopped |
+| **Fixed duration** | Auto-stops after *N* hours of active time (paused time excluded) |
+| **Stop at date & time** | Stops when system clock passes the chosen moment |
 
-**Menu presets** (one-shot; override saved defaults): saved settings, run forever, 1 h / 4 h / 8 h.
+Quick-start presets from the menu: *Saved Settings*, *Run Forever*, *1 h*, *4 h*, *8 h*.
 
 ### Dashboard
 
-Title: **deceiverMe**. Main areas:
+Live control centre accessible from the menu bar:
 
-| Element | Description |
-| :--- | :--- |
-| Status badge | `Idle` / `Running` / `Paused` |
-| Version tag | Current version (e.g. `v1.2.0`) |
-| Update banner | Appears when a newer release exists on GitHub — click **Update** to auto-download, install, and relaunch |
-| Clock | Session elapsed `HH:MM:SS` |
-| Time left | Remaining time, `∞` if open-ended |
-| Moves | Move count |
-| Progress | Progress bar (or `—` if no end) |
-| System monitor | CPU/GPU temperature, CPU %, RAM, network throughput |
-| Buttons | **Start**, **Pause** / **Resume**, **Stop**, **Settings** |
+- **Status badge** — `Idle` / `Running` / `Paused`
+- **Session clock** — elapsed `HH:MM:SS`, time remaining, move count, progress bar
+- **System monitor** — CPU/GPU temperature, CPU %, RAM, network throughput
+- **Action buttons** — Start, Pause/Resume, Stop, Settings
+- **Version tag** — current version at a glance
 
-**Start** is only enabled when fully idle.
+### Auto-Update
 
-### Auto-update
+On every Dashboard open, the app queries the [GitHub Releases API](https://api.github.com/repos/mimran-khan/deceiverme/releases/latest):
 
-Every time you open the Dashboard, deceiverMe queries the [GitHub Releases API](https://api.github.com/repos/mimran-khan/deceiverme/releases/latest) to check for a newer version.
+- **New release detected** → a notification banner appears at the bottom
+- **One-click update** → downloads the `.zip`, extracts, replaces the running app, and relaunches automatically
+- **Up to date** → banner stays hidden
+- **Fallback** → if the zip asset is missing, the button opens the release page instead
 
-- **New release available** — a blue notification banner appears at the bottom of the Dashboard with the new version number and an **Update** button.
-- **One-click update** — clicking **Update** automatically downloads the latest `.zip` asset from GitHub, extracts the new `.app`, replaces the current installation, and relaunches — no manual download or drag-and-drop needed.
-- **Up to date** — the banner stays hidden; no interruption.
-- **Fallback** — if the zip asset is unavailable, the button opens the release page in your browser instead.
+The check is a single background HTTPS GET — no telemetry, no data leaves your machine beyond the version query.
 
-The check is lightweight (single HTTPS GET), runs in the background, and never blocks the UI. No data beyond the version check leaves your machine.
+### System Monitor
 
-### System monitor
-
-Real-time system telemetry displayed in the Dashboard and the menu bar:
+Real-time telemetry in the Dashboard and menu bar:
 
 | Metric | Source |
 | :--- | :--- |
@@ -105,154 +107,127 @@ Real-time system telemetry displayed in the Dashboard and the menu bar:
 | GPU temperature | SMC |
 | CPU usage | `host_processor_info` |
 | RAM usage | `host_statistics64` |
-| Network throughput | `getifaddrs` (down / up) |
+| Network throughput | `getifaddrs` (↓ / ↑) |
 
-Temperature readings use a persistent SMC connection via IOKit for stability.
+### Menu Bar
 
-### Menu bar
+- **Status icon** — concentric rings (template image)
+- **Banner rotation** — live elapsed time, system stats
+- **Start submenu** — presets (saved settings, run forever, 1 h / 4 h / 8 h)
+- **Pause / Resume**, **Stop**
+- **Dashboard** `⌘W` · **Settings** `⌘,` · **Quit** `⌘Q`
 
-- **Icon** — concentric rings (template image)
-- **Status** — may show elapsed time; paused shows `Paused` status
-- **Start** — submenu with presets (saved settings, run forever, 1h / 4h / 8h)
-- **Pause** / **Resume**, **Stop**
-- System stats (CPU, RAM, network, temperatures)
-- **Dashboard** — `⌘W`
-- **Settings…** — `⌘,`
-- **Quit** — `⌘Q`
+### Global Hotkey
 
-### Settings
+Default **`⌘⇧Space`** — toggles start / pause. Customisable in Settings via **Record shortcut…**.
 
-**Settings — deceiverMe**
+### URL Scheme
 
-| Control | Purpose |
-| :--- | :--- |
-| Pixels, Direction, Interval | Movement configuration |
-| Session mode | Run forever / Fixed duration / Stop at date & time |
-| Duration (hours) | For fixed duration mode |
-| Stop at | Date-time picker for scheduled stop |
-| Notify when session ends | End notification toggle |
-| Keep display & system awake | `ProcessInfo.beginActivity` with idle display + system sleep disabled while running |
-| Global shortcut | Display + **Record shortcut…** |
-| Save / Close | Persist settings or dismiss |
+Scheme: `deceiverme://`
 
-Saving is **blocked while a session is running** (shows an alert).
-
-### Global hotkey
-
-Carbon **RegisterEventHotKey**. Default **`⌘⇧Space`**: idle → start with saved settings; running → pause toggle.
+```bash
+open "deceiverme://start"                  # start with saved settings
+open "deceiverme://start?duration=1800"     # start, 30 min session
+open "deceiverme://start?until=1700000000"  # start, stop at Unix epoch
+open "deceiverme://stop"                    # stop
+open "deceiverme://pause"                   # toggle pause
+```
 
 ### Notifications
 
-**UserNotifications**: title `Session ended`, subtitle `deceiverMe`, body = reason. Banners on macOS 11+.
+Session-end alerts via `UserNotifications` (banners on macOS 11+). Toggle in Settings.
 
-### URL scheme
+<p align="right">(<a href="#screenshots">back to top</a>)</p>
 
-Scheme: **`deceiverme`**
+---
 
-| URL | Action |
-| :--- | :--- |
-| `deceiverme://start` | Start (saved settings) |
-| `deceiverme://start?duration=3600` | Start, 3600 s session |
-| `deceiverme://start?until=<unix>` | Start, stop at Unix epoch seconds |
-| `deceiverme://stop` | Stop |
-| `deceiverme://pause` or `toggle` | Start if idle, else pause toggle |
+## Quick Start
+
+1. **Download** the latest `.zip` from [Releases](https://github.com/mimran-khan/deceiverme/releases/latest), or [build from source](#build-from-source).
+2. **Move** `deceiverMe.app` to `/Applications`.
+3. **Open** the app — the menu bar icon appears.
+4. **Grant Accessibility** when prompted:
+   `System Settings` → `Privacy & Security` → `Accessibility` → enable **deceiverMe**.
+5. Open **Settings** → configure pixels, direction, interval, session mode → **Save**.
+6. **Start** from the Dashboard, menu bar, hotkey, or URL scheme.
+
+<p align="right">(<a href="#screenshots">back to top</a>)</p>
+
+---
+
+## Build from Source
+
+### Prerequisites
+
+- macOS 11+ with **Xcode Command Line Tools**
 
 ```bash
-open "deceiverme://start?duration=1800"
-open "deceiverme://stop"
+xcode-select --install
 ```
 
----
-
-## User Guide
-
-1. **Build or install** `deceiverMe.app` (see [Build](#build)).
-2. **Open** the app — menu bar icon appears; Dashboard can stay open.
-3. **Grant Accessibility** when prompted (System Settings → Privacy & Security → Accessibility).
-4. Open **Settings…** (pixels, direction, interval, session mode, options) → **Save**.
-5. **Start** from the Dashboard or **Start** menu (or hotkey / URL).
-6. Use **Pause** / **Resume** and **Stop** as needed.
-
----
-
-## Build
-
-### Requirements
-
-- macOS with **Xcode Command Line Tools**
-  `xcode-select --install`
-
-### Command
+### Build
 
 ```bash
 chmod +x build.sh   # first time only
 ./build.sh
 ```
 
-The script:
+The script compiles with `-O -whole-module-optimization`, builds a universal binary (Intel + Apple Silicon), ad-hoc codesigns, and produces a distributable zip.
 
-1. Validates `MouseMoverNative/MouseMoverNative.swift` and `packaging/Info.plist`
-2. Copies `Info.plist`, writes `PkgInfo`
-3. Compiles with **`-O -whole-module-optimization`** for both slices (universal) or one arch (native)
-4. Links frameworks: Cocoa, CoreGraphics, Carbon, UserNotifications, **IOKit**
-5. Runs **`lipo`** when building universal (Intel + Apple Silicon, macOS 11+)
-6. Ensures the executable exists and is non-empty
-7. **`codesign --force --deep --sign -`** and **`codesign --verify`** (unless skipped)
-8. Creates **`dist/deceiverMe-macos.zip`** with **`ditto`** (unless skipped)
-
-### Outputs
+### Output
 
 ```
-deceiverMe.app/          ← at repository root (gitignored)
-dist/deceiverMe-macos.zip
+deceiverMe.app/               ← repository root (gitignored)
+dist/deceiverMe-macos.zip     ← distributable archive
 ```
 
-### Environment variables
+### Build Options
 
 | Variable | Effect |
 | :--- | :--- |
 | `BUILD_STYLE=native` | Single-arch for current CPU only |
-| `SKIP_CODESIGN=1` | No codesign |
-| `SKIP_ZIP=1` | No zip |
+| `SKIP_CODESIGN=1` | Skip codesigning |
+| `SKIP_ZIP=1` | Skip zip creation |
 
 ```bash
 BUILD_STYLE=native ./build.sh
 SKIP_ZIP=1 ./build.sh
 ```
 
-**Native plist minimum:** `x86_64` → 10.13, `arm64` → 11.0 (script patches `LSMinimumSystemVersion`).
-
-> `deceiverMe.app/` and `dist/` are listed in `.gitignore`.
+<p align="right">(<a href="#screenshots">back to top</a>)</p>
 
 ---
 
-## Reference
+<details>
+<summary><b>Reference</b> — internals, defaults, and repo layout</summary>
 
-### How it runs (technical)
+<br/>
+
+### How It Runs
 
 1. `NSApplication` + `NSStatusItem` + Dashboard `NSWindow`
-2. `Timer` (on `RunLoop.main`, `.common` mode) every `moveInterval` → `moveMouse()`
+2. `Timer` on `RunLoop.main` (`.common` mode) fires every `moveInterval` → `moveMouse()`
 3. `AXIsProcessTrustedWithOptions` before first start
 4. `shouldAutoStop` on tick → optional `stopMovement(notify:reason:)`
 5. 1 Hz UI refresh for menu + Dashboard
 6. SMC temperature polling via persistent IOKit connection
 
-### UserDefaults keys
+### UserDefaults Keys
 
-| Key | Meaning |
+| Key | Purpose |
 | :--- | :--- |
 | `pixelMove` | Pixels per move |
 | `direction` | `MovementDirection` raw value |
 | `moveInterval` | Interval (seconds) |
 | `totalDuration` | Duration (seconds) |
-| `prefsSessionKind` | `0` run forever / `1` fixed duration / `2` stop at |
+| `prefsSessionKind` | `0` forever / `1` fixed / `2` stop at |
 | `sessionUntilEpoch` | Deadline (`timeIntervalSince1970`) |
-| `notifyOnSessionEnd` | Bool (default true if missing) |
-| `preventIdleSleepWhileRunning` | Bool (default **true** if key missing) |
+| `notifyOnSessionEnd` | Bool |
+| `preventIdleSleepWhileRunning` | Bool (default `true`) |
 | `hotkeyKeyCode` | Carbon virtual key |
 | `hotkeyCarbonModifiers` | Carbon modifiers bitmask |
 
-### Repository layout
+### Repository Layout
 
 ```
 .
@@ -261,64 +236,86 @@ SKIP_ZIP=1 ./build.sh
 ├── AGENTS.md
 ├── build.sh
 ├── .gitignore
+├── screenshots/
+│   ├── dashboard.png
+│   └── settings.png
 ├── packaging/
 │   └── Info.plist
 └── MouseMoverNative/
     └── MouseMoverNative.swift
 ```
 
+</details>
+
 ---
 
 ## Permissions
 
-**Accessibility** — required for cursor control.
+| Permission | Required | How to enable |
+| :--- | :--- | :--- |
+| **Accessibility** | Yes | `System Settings` → `Privacy & Security` → `Accessibility` → enable **deceiverMe** |
+| **Notifications** | Optional | Allow when prompted for session-end alerts |
 
-`System Settings` → `Privacy & Security` → `Accessibility` → enable **deceiverMe** (or **MouseMoverNative** if listed).
-
-Restart the app after changes.
-
-**Notifications** — optional; allow if you want session-end alerts.
+Restart the app after changing permissions.
 
 ---
 
 ## Troubleshooting
 
-| Issue | What to do |
+<details>
+<summary>Click to expand</summary>
+
+<br/>
+
+| Issue | Fix |
 | :--- | :--- |
-| Build fails at **swiftc** | Install CLT; check Swift errors in the terminal |
-| **codesign** fails | Read the printed error; or `SKIP_CODESIGN=1 ./build.sh` for local-only |
+| Build fails at `swiftc` | Install CLT; check Swift errors in terminal |
+| `codesign` fails | Read the error; or `SKIP_CODESIGN=1 ./build.sh` |
 | Zip missing | Ensure `SKIP_ZIP` is not set; check `dist/` is writable |
 | App won't open | Right-click → Open; review Gatekeeper / quarantine |
 | Cursor never moves | Accessibility off → add app and restart |
 | Hotkey not working | Pick another combo in **Record shortcut…** |
-| Can't save settings | Stop the session first |
-| Screen still locks | Leave **Keep display & system awake** on in Settings; confirm a running session (not paused). **MDM** or **Lock Screen after …** policies can still force lock. |
-| Temperatures show `—` | SMC access may require running without sandboxing; ad-hoc signed builds work on personal machines |
+| Can't save settings | Stop the running session first |
+| Screen still locks | Enable **Keep display & system awake** in Settings; confirm session is active (not paused). MDM policies can override. |
+| Temperatures show `—` | SMC access requires running without sandboxing; ad-hoc signed builds work on personal machines |
+
+</details>
 
 ---
 
-## Security and ethics
+## Security & Privacy
 
-- The only outbound request is an **update check** against the GitHub Releases API — no telemetry or analytics.
-- Cursor control and idle-sleep assertions are **sensitive** in managed environments — follow **policy**.
-- **Ad-hoc** sign is fine for personal builds; wide distribution usually needs **Developer ID** + **notarization**.
+- **No telemetry** — the only outbound request is the GitHub Releases API update check.
+- Cursor control and idle-sleep assertions are sensitive in managed environments — follow your org's policy.
+- Ad-hoc signing is fine for personal builds; wide distribution needs **Developer ID** + **notarization**.
 
 ---
 
 ## Contributing
 
-Issues and PRs welcome at [github.com/mimran-khan/deceiverme](https://github.com/mimran-khan/deceiverme). Run `./build.sh` successfully before submitting Swift changes.
+Contributions, issues, and feature requests are welcome.
+
+1. Fork the repo
+2. Create your branch (`git checkout -b feature/amazing-feature`)
+3. Make changes and ensure `./build.sh` passes
+4. Commit (`git commit -m 'feat: add amazing feature'`)
+5. Push (`git push origin feature/amazing-feature`)
+6. Open a Pull Request
+
+See [Issues](https://github.com/mimran-khan/deceiverme/issues) for known bugs and planned features.
 
 ---
 
 ## License
 
-[MIT](LICENSE) © 2026 deceiverMe contributors.
+Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for details.
 
 ---
 
 <div align="center">
 
-Built by [mimran-khan](https://mimran-khan.github.io/)
+**[deceiverMe](https://github.com/mimran-khan/deceiverme)** is built and maintained by [mimran-khan](https://mimran-khan.github.io/)
+
+If you find this useful, consider giving a ⭐
 
 </div>
