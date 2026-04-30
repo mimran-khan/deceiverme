@@ -119,7 +119,7 @@ private func carbonHotKeyCallback(
 
 // MARK: - AppDelegate
 
-class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNotificationCenterDelegate {
     // Menu bar
     var statusItem: NSStatusItem!
     var menu: NSMenu!
@@ -180,7 +180,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     var lastNetDown: String = "—"
     var lastNetUp: String = "—"
 
-    static let appVersion = "1.3.0"
+    static let appVersion = "1.4.0"
 
     // Update banner
     var updateBannerView: NSView?
@@ -360,7 +360,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         updateTimer = timer
 
         window.makeKeyAndOrderFront(nil)
-        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
 
         startBannerCycleTimer()
         checkForGitHubUpdate()
@@ -449,6 +449,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        sender.orderOut(nil)
+        return false
     }
 
     // MARK: - URL scheme (deceiverme://)
@@ -672,6 +677,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         window.title = "deceiverMe"
         window.center()
         window.isReleasedWhenClosed = false
+        window.delegate = self
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.backgroundColor = DMTheme.bg

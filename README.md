@@ -111,6 +111,8 @@ Real-time telemetry in the Dashboard and menu bar:
 
 ### Menu Bar
 
+- **Dock-free** — runs as an `LSUIElement` agent; no Dock icon, no app-switcher entry
+- **Close = hide** — closing the Dashboard hides the window; the app keeps running in the menu bar
 - **Status icon** — concentric rings (template image)
 - **Banner rotation** — live elapsed time, system stats
 - **Start submenu** — presets (saved settings, run forever, 1 h / 4 h / 8 h)
