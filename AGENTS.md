@@ -8,5 +8,5 @@
 
 - Repository/workspace folder is **simm**; the shipped app/product name in the UI is **deceiverMe**, built via `build.sh`, producing `deceiverMe.app` at the repo root. Primary native UI is Swift/AppKit in `MouseMoverNative/MouseMoverNative.swift`. Integrations (monitoring, UI changes) are expected in this app rather than separate demo projects unless specified otherwise.
 - Theme and colors are centralized in a private `DMTheme` palette; large multi-function UI rewrites may use scripted whole-block replacement (for example Python) when single-shot search-and-replace is brittle on very large contiguous edits.
-- Integrated system telemetry (SMC temps, CPU %, RAM, network) appears in the menu and Dashboard window; **`build.sh` links `-framework IOKit`** with the other frameworks.
+- Integrated system telemetry (SMC temps, CPU %, RAM, network) appears in the menu and Dashboard window; **`build.sh` links `-framework IOKit`** with the other frameworks. If the deployment target is macOS 11.x, open SMC via `IOServiceGetMatchingService(0, …)` (do not use `kIOMainPortDefault`, which requires macOS 12+).
 - GitHub repo: `https://github.com/mimran-khan/deceiverme`; author page: `https://mimran-khan.github.io/`.

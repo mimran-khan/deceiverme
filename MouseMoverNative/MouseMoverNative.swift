@@ -21,6 +21,7 @@ struct SMCKeyData_t {
     }
 
     static let kSMCHandleYPCEvent: UInt8 = 2
+    static let kSMCGetKeyFromIndex: UInt8 = 8
     static let kSMCGetKeyInfo: UInt8 = 9
     static let kSMCReadKey: UInt8 = 5
 
@@ -28,6 +29,7 @@ struct SMCKeyData_t {
     static let dataType_sp78: UInt32 = fourCC("sp78")
     static let dataType_ui8: UInt32 = fourCC("ui8 ")
     static let dataType_ui16: UInt32 = fourCC("ui16")
+    static let dataType_ui32: UInt32 = fourCC("ui32")
 
     var key: UInt32 = 0
     var vers = (UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0))
@@ -165,7 +167,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     var prevBytesIn: UInt64 = 0
     var prevBytesOut: UInt64 = 0
     var smcConnection: io_connect_t = 0
-    
+    var discoveredCpuKeys: [String] = []
+    var discoveredGpuKeys: [String] = []
+
 
     var bannerCycleTimer: Timer?
     var bannerCycleIndex: Int = 0
@@ -176,7 +180,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     var lastNetDown: String = "—"
     var lastNetUp: String = "—"
 
-    static let appVersion = "1.2.0"
+    static let appVersion = "1.3.0"
 
     // Update banner
     var updateBannerView: NSView?
@@ -254,9 +258,87 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
     }
 
+    func discoverTemperatureKeys() {
+        guard smcConnection != 0 else { return }
+
+        let totalKeys = smcReadKeyCount()
+        guard totalKeys > 0 else { return }
+
+        var cpuKeys: [String] = []
+        var gpuKeys: [String] = []
+
+        let structSize = MemoryLayout<SMCKeyData_t>.size
+        for i in 0..<totalKeys {
+            var input = SMCKeyData_t()
+            var output = SMCKeyData_t()
+            input.data8 = SMCKeyData_t.kSMCGetKeyFromIndex
+            input.data32 = UInt32(i)
+
+            var outSize = structSize
+            let rc = IOConnectCallStructMethod(smcConnection,
+                                              UInt32(SMCKeyData_t.kSMCHandleYPCEvent),
+                                              &input, structSize,
+                                              &output, &outSize)
+            guard rc == kIOReturnSuccess else { continue }
+
+            let name = smcKeyCodeToString(output.key)
+            guard name.count == 4 else { continue }
+
+            if name.hasPrefix("Tp") || name.hasPrefix("Tc") || name.hasPrefix("TC") {
+                cpuKeys.append(name)
+            } else if name.hasPrefix("Tg") || name.hasPrefix("TG") {
+                gpuKeys.append(name)
+            }
+        }
+
+        if !cpuKeys.isEmpty { discoveredCpuKeys = cpuKeys }
+        if !gpuKeys.isEmpty { discoveredGpuKeys = gpuKeys }
+    }
+
+    private func smcReadKeyCount() -> Int {
+        guard smcConnection != 0 else { return 0 }
+
+        var input = SMCKeyData_t()
+        var output = SMCKeyData_t()
+        let chars = Array("#KEY".utf8)
+        input.key = UInt32(chars[0]) << 24 | UInt32(chars[1]) << 16 | UInt32(chars[2]) << 8 | UInt32(chars[3])
+        input.data8 = SMCKeyData_t.kSMCGetKeyInfo
+
+        let structSize = MemoryLayout<SMCKeyData_t>.size
+        var outSize = structSize
+        var rc = IOConnectCallStructMethod(smcConnection,
+                                          UInt32(SMCKeyData_t.kSMCHandleYPCEvent),
+                                          &input, structSize, &output, &outSize)
+        guard rc == kIOReturnSuccess else { return 0 }
+
+        input.keyInfo.dataSize = output.keyInfo.dataSize
+        input.keyInfo.dataType = output.keyInfo.dataType
+        input.data8 = SMCKeyData_t.kSMCReadKey
+
+        outSize = structSize
+        rc = IOConnectCallStructMethod(smcConnection,
+                                       UInt32(SMCKeyData_t.kSMCHandleYPCEvent),
+                                       &input, structSize, &output, &outSize)
+        guard rc == kIOReturnSuccess else { return 0 }
+
+        let b = output.bytes
+        return Int(UInt32(b.0) << 24 | UInt32(b.1) << 16 | UInt32(b.2) << 8 | UInt32(b.3))
+    }
+
+    private func smcKeyCodeToString(_ code: UInt32) -> String {
+        var chars: [Character] = []
+        for shift: UInt32 in [24, 16, 8, 0] {
+            let byte = (code >> shift) & 0xFF
+            guard byte >= 0x20, byte <= 0x7E, let scalar = UnicodeScalar(byte) else { return "" }
+            chars.append(Character(scalar))
+        }
+        return String(chars)
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         loadPreferences()
         openSMCConnection()
+        discoverTemperatureKeys()
         if #available(macOS 10.14, *) {
             UNUserNotificationCenter.current().delegate = self
             requestNotificationPermissionIfNeeded()
@@ -964,8 +1046,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         guard smcConnection != 0 else { return ("N/A", "N/A") }
 
-        let cpuKeys = ["Tp01", "Tp05", "Tp09", "Tp0D", "Tp0T", "Tc0c", "TC0P", "Tc1c", "Tc0C"]
-        let gpuKeys = ["Tg05", "Tg0D", "Tg0T", "Tg0P", "Tg0c", "TG0P"]
+        if discoveredCpuKeys.isEmpty && discoveredGpuKeys.isEmpty {
+            discoverTemperatureKeys()
+        }
+
+        let fallbackCpuKeys = ["Tp01", "Tp05", "Tp09", "Tp0D", "Tp0T", "Tc0c", "TC0P", "Tc1c", "Tc0C"]
+        let fallbackGpuKeys = ["Tg05", "Tg0D", "Tg0T", "Tg0P", "Tg0c", "TG0P"]
+
+        let cpuKeys = discoveredCpuKeys.isEmpty ? fallbackCpuKeys : discoveredCpuKeys
+        let gpuKeys = discoveredGpuKeys.isEmpty ? fallbackGpuKeys : discoveredGpuKeys
 
         var cpuTemp: Double = 0
         for key in cpuKeys {
@@ -1036,6 +1125,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             let raw = Int16(bytes.0) << 8 | Int16(bytes.1)
             let val = Double(raw) / 256.0
             return val
+        }
+
+        if dataType == SMCKeyData_t.dataType_ui32 {
+            return Double(UInt32(bytes.0) << 24 | UInt32(bytes.1) << 16 | UInt32(bytes.2) << 8 | UInt32(bytes.3))
         }
 
         if dataType == SMCKeyData_t.dataType_ui8 || dataType == SMCKeyData_t.dataType_ui16 {

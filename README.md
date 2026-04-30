@@ -103,8 +103,8 @@ Real-time telemetry in the Dashboard and menu bar:
 
 | Metric | Source |
 | :--- | :--- |
-| CPU temperature | SMC (Apple Silicon & Intel) |
-| GPU temperature | SMC |
+| CPU temperature | SMC (dynamic key discovery — Apple Silicon & Intel) |
+| GPU temperature | SMC (dynamic key discovery) |
 | CPU usage | `host_processor_info` |
 | RAM usage | `host_statistics64` |
 | Network throughput | `getifaddrs` (↓ / ↑) |
@@ -210,7 +210,7 @@ SKIP_ZIP=1 ./build.sh
 3. `AXIsProcessTrustedWithOptions` before first start
 4. `shouldAutoStop` on tick → optional `stopMovement(notify:reason:)`
 5. 1 Hz UI refresh for menu + Dashboard
-6. SMC temperature polling via persistent IOKit connection
+6. SMC temperature polling via persistent IOKit connection with dynamic key discovery
 
 ### UserDefaults Keys
 
@@ -277,7 +277,7 @@ Restart the app after changing permissions.
 | Hotkey not working | Pick another combo in **Record shortcut…** |
 | Can't save settings | Stop the running session first |
 | Screen still locks | Enable **Keep display & system awake** in Settings; confirm session is active (not paused). MDM policies can override. |
-| Temperatures show `—` | SMC access requires running without sandboxing; ad-hoc signed builds work on personal machines |
+| Temperatures show `—` | SMC access requires running without sandboxing; ad-hoc signed builds work on personal machines. v1.3.0+ uses dynamic key discovery to support all Apple Silicon generations (M1–M4). |
 
 </details>
 
