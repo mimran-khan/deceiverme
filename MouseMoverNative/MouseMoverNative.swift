@@ -133,11 +133,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNoti
     var showWindowMenuItem: NSMenuItem!
     var preferencesMenuItem: NSMenuItem!
     var quitMenuItem: NSMenuItem!
-    var menuCpuUsageItem: NSMenuItem!
-    var menuRamItem: NSMenuItem!
-    var menuNetItem: NSMenuItem!
-    var menuCpuTempItem: NSMenuItem!
-    var menuGpuTempItem: NSMenuItem!
+    var menuCpuUsageItem: NSMenuItem?
+    var menuRamItem: NSMenuItem?
+    var menuNetItem: NSMenuItem?
+    var menuCpuTempItem: NSMenuItem?
+    var menuGpuTempItem: NSMenuItem?
 
     // Desktop window
     var window: NSWindow!
@@ -157,12 +157,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNoti
     var progressFill: NSView?
 
     // System monitoring
-    var cpuTempLabel: NSTextField!
-    var gpuTempLabel: NSTextField!
-    var cpuUsageLabel: NSTextField!
-    var ramLabel: NSTextField!
-    var netDownLabel: NSTextField!
-    var netUpLabel: NSTextField!
+    var cpuTempLabel: NSTextField?
+    var gpuTempLabel: NSTextField?
+    var cpuUsageLabel: NSTextField?
+    var ramLabel: NSTextField?
+    var netDownLabel: NSTextField?
+    var netUpLabel: NSTextField?
     var sysMonTimer: Timer?
     var prevBytesIn: UInt64 = 0
     var prevBytesOut: UInt64 = 0
@@ -180,7 +180,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNoti
     var lastNetDown: String = "—"
     var lastNetUp: String = "—"
 
-    static let appVersion = "1.4.0"
+    static let appVersion = "1.5.0"
 
     // Update banner
     var updateBannerView: NSView?
@@ -262,10 +262,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNoti
         guard smcConnection != 0 else { return }
 
         let totalKeys = smcReadKeyCount()
-        guard totalKeys > 0 else { return }
+        guard totalKeys > 0, totalKeys < 2000 else { return }
 
         var cpuKeys: [String] = []
         var gpuKeys: [String] = []
+        var consecutiveErrors = 0
 
         let structSize = MemoryLayout<SMCKeyData_t>.size
         for i in 0..<totalKeys {
@@ -279,7 +280,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNoti
                                               UInt32(SMCKeyData_t.kSMCHandleYPCEvent),
                                               &input, structSize,
                                               &output, &outSize)
-            guard rc == kIOReturnSuccess else { continue }
+            if rc != kIOReturnSuccess {
+                consecutiveErrors += 1
+                if consecutiveErrors > 10 { break }
+                continue
+            }
+            consecutiveErrors = 0
 
             let name = smcKeyCodeToString(output.key)
             guard name.count == 4 else { continue }
@@ -594,25 +600,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNoti
 
         menu.addItem(NSMenuItem.separator())
 
-        menuCpuUsageItem = NSMenuItem(title: "CPU: —", action: nil, keyEquivalent: "")
-        menuCpuUsageItem.isEnabled = false
-        menu.addItem(menuCpuUsageItem)
+        let cpuItem = NSMenuItem(title: "CPU: —", action: nil, keyEquivalent: "")
+        cpuItem.isEnabled = false
+        menuCpuUsageItem = cpuItem
+        menu.addItem(cpuItem)
 
-        menuRamItem = NSMenuItem(title: "RAM: —", action: nil, keyEquivalent: "")
-        menuRamItem.isEnabled = false
-        menu.addItem(menuRamItem)
+        let ramItem = NSMenuItem(title: "RAM: —", action: nil, keyEquivalent: "")
+        ramItem.isEnabled = false
+        menuRamItem = ramItem
+        menu.addItem(ramItem)
 
-        menuNetItem = NSMenuItem(title: "Net: — down / — up", action: nil, keyEquivalent: "")
-        menuNetItem.isEnabled = false
-        menu.addItem(menuNetItem)
+        let netItem = NSMenuItem(title: "Net: — down / — up", action: nil, keyEquivalent: "")
+        netItem.isEnabled = false
+        menuNetItem = netItem
+        menu.addItem(netItem)
 
-        menuCpuTempItem = NSMenuItem(title: "CPU Temp: —", action: nil, keyEquivalent: "")
-        menuCpuTempItem.isEnabled = false
-        menu.addItem(menuCpuTempItem)
+        let cpuTItem = NSMenuItem(title: "CPU Temp: —", action: nil, keyEquivalent: "")
+        cpuTItem.isEnabled = false
+        menuCpuTempItem = cpuTItem
+        menu.addItem(cpuTItem)
 
-        menuGpuTempItem = NSMenuItem(title: "GPU Temp: —", action: nil, keyEquivalent: "")
-        menuGpuTempItem.isEnabled = false
-        menu.addItem(menuGpuTempItem)
+        let gpuTItem = NSMenuItem(title: "GPU Temp: —", action: nil, keyEquivalent: "")
+        gpuTItem.isEnabled = false
+        menuGpuTempItem = gpuTItem
+        menu.addItem(gpuTItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -968,21 +979,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNoti
         var cpuInfo: processor_info_array_t?
         var numCpuInfo: mach_msg_type_number_t = 0
         let result = host_processor_info(mach_host_self(), PROCESSOR_CPU_LOAD_INFO, &numCPUsU, &cpuInfo, &numCpuInfo)
-        if result == KERN_SUCCESS, let cpuInfo = cpuInfo {
-            var totalUser: Int32 = 0, totalSys: Int32 = 0, totalIdle: Int32 = 0
-            for i in 0..<Int(numCPUsU) {
-                let offset = Int(CPU_STATE_MAX) * i
-                totalUser += cpuInfo[offset + Int(CPU_STATE_USER)] + cpuInfo[offset + Int(CPU_STATE_NICE)]
-                totalSys += cpuInfo[offset + Int(CPU_STATE_SYSTEM)]
-                totalIdle += cpuInfo[offset + Int(CPU_STATE_IDLE)]
+        if result == KERN_SUCCESS, let info = cpuInfo, numCPUsU > 0 {
+            var totalUser: Int64 = 0, totalSys: Int64 = 0, totalIdle: Int64 = 0
+            let expectedCount = Int(numCPUsU) * Int(CPU_STATE_MAX)
+            if Int(numCpuInfo) >= expectedCount {
+                for i in 0..<Int(numCPUsU) {
+                    let offset = Int(CPU_STATE_MAX) * i
+                    totalUser += Int64(info[offset + Int(CPU_STATE_USER)]) + Int64(info[offset + Int(CPU_STATE_NICE)])
+                    totalSys += Int64(info[offset + Int(CPU_STATE_SYSTEM)])
+                    totalIdle += Int64(info[offset + Int(CPU_STATE_IDLE)])
+                }
             }
             let total = totalUser + totalSys + totalIdle
             let usage = total > 0 ? Double(totalUser + totalSys) / Double(total) * 100 : 0
             let cpuStr = String(format: "%.1f%%", usage)
-            cpuUsageLabel.stringValue = cpuStr
+            cpuUsageLabel?.stringValue = cpuStr
             lastCpuUsage = cpuStr
             menuCpuUsageItem?.title = "CPU: \(cpuStr)"
-            vm_deallocate(mach_task_self_, vm_address_t(bitPattern: cpuInfo), vm_size_t(numCpuInfo) * vm_size_t(MemoryLayout<Int32>.stride))
+            vm_deallocate(mach_task_self_, vm_address_t(bitPattern: info), vm_size_t(numCpuInfo) * vm_size_t(MemoryLayout<Int32>.stride))
         }
 
         // RAM
@@ -1002,7 +1016,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNoti
             let used = active + wired + compressed
             let pct = totalRam > 0 ? Double(used) / Double(totalRam) * 100 : 0
             let ramStr = String(format: "%.0f%%", pct)
-            ramLabel.stringValue = ramStr
+            ramLabel?.stringValue = ramStr
             lastRam = ramStr
             menuRamItem?.title = "RAM: \(ramStr)"
         }
@@ -1013,8 +1027,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNoti
             var totalIn: UInt64 = 0, totalOut: UInt64 = 0
             var ptr: UnsafeMutablePointer<ifaddrs>? = firstAddr
             while let addr = ptr {
-                if addr.pointee.ifa_addr.pointee.sa_family == UInt8(AF_LINK) {
-                    let data = unsafeBitCast(addr.pointee.ifa_data, to: UnsafeMutablePointer<if_data>.self)
+                if let ifaAddr = addr.pointee.ifa_addr,
+                   ifaAddr.pointee.sa_family == UInt8(AF_LINK),
+                   let ifaData = addr.pointee.ifa_data {
+                    let data = ifaData.assumingMemoryBound(to: if_data.self)
                     totalIn += UInt64(data.pointee.ifi_ibytes)
                     totalOut += UInt64(data.pointee.ifi_obytes)
                 }
@@ -1028,8 +1044,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNoti
                 let kbOut = Double(dOut) / 1024.0 / 3.0
                 let dnStr = String(format: "%.1f KB/s", kbIn)
                 let upStr = String(format: "%.1f KB/s", kbOut)
-                netDownLabel.stringValue = dnStr
-                netUpLabel.stringValue = upStr
+                netDownLabel?.stringValue = dnStr
+                netUpLabel?.stringValue = upStr
                 lastNetDown = dnStr
                 lastNetUp = upStr
                 menuNetItem?.title = "Net: \(dnStr) down / \(upStr) up"
@@ -1047,14 +1063,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNoti
     }
 
     private func readSMCTemperatures() -> (cpu: String, gpu: String) {
-        if smcConnection == 0 {
-            openSMCConnection()
-        }
-        guard smcConnection != 0 else { return ("N/A", "N/A") }
-
-        if discoveredCpuKeys.isEmpty && discoveredGpuKeys.isEmpty {
-            discoverTemperatureKeys()
-        }
+        guard smcConnection != 0 else { return ("—", "—") }
 
         let fallbackCpuKeys = ["Tp01", "Tp05", "Tp09", "Tp0D", "Tp0T", "Tc0c", "TC0P", "Tc1c", "Tc0C"]
         let fallbackGpuKeys = ["Tg05", "Tg0D", "Tg0T", "Tg0P", "Tg0c", "TG0P"]
@@ -1146,8 +1155,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNoti
 
     private func setTempDisplay(_ cpu: String, _ gpu: String) {
         let update = {
-            self.cpuTempLabel.stringValue = cpu
-            self.gpuTempLabel.stringValue = gpu
+            self.cpuTempLabel?.stringValue = cpu
+            self.gpuTempLabel?.stringValue = gpu
             self.lastCpuTemp = cpu
             self.lastGpuTemp = gpu
             self.menuCpuTempItem?.title = "CPU Temp: \(cpu)"

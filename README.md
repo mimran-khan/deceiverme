@@ -280,6 +280,7 @@ Restart the app after changing permissions.
 | Can't save settings | Stop the running session first |
 | Screen still locks | Enable **Keep display & system awake** in Settings; confirm session is active (not paused). MDM policies can override. |
 | Temperatures show `—` | SMC access requires running without sandboxing; ad-hoc signed builds work on personal machines. v1.3.0+ uses dynamic key discovery to support all Apple Silicon generations (M1–M4). |
+| App crashes on launch | Fixed in v1.5.0 — an arithmetic overflow in CPU tick counters (`Int32`) caused silent crashes on high-core-count Macs (M4 Pro). Now uses `Int64` accumulators. Also hardened all optional UI fields and network interface pointer access. |
 
 </details>
 
