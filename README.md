@@ -235,7 +235,6 @@ SKIP_ZIP=1 ./build.sh
 .
 ├── LICENSE
 ├── README.md
-├── AGENTS.md
 ├── build.sh
 ├── .gitignore
 ├── screenshots/
